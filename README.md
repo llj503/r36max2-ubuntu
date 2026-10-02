@@ -201,6 +201,43 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 删掉它；设备侧的配置文件里只有哈希。这个取舍和 Raspberry Pi OS 的 `network.txt` 一样，
 是"没有任何输入通道"的板子唯一现实的做法。
 
+## 内核版本：6.12.79（镜像默认）与 7.2.8（已移植）
+
+主线 7.2.8（2026-09-25 发布）在这块板子上**已经跑通并真机验证**，但镜像默认仍是
+6.12.79 —— 因为移植过程中攒下的经验是"能上网的驱动比新内核值钱"。两者的差异：
+
+| | 6.12.79 | 7.2.8 |
+| --- | --- | --- |
+| 构建 | `K=/root/r36/linux-6.12.79 bash build/build-all.sh` | `K=/root/r36/linux-7.2.8 bash build/build-all.sh`（16 核 505 秒） |
+| 补丁层 | 全部干净应用 | 11/24 干净；13 个 panfrost 冲突**直接丢掉**（上游已实现 `SET_LABEL_BO`、`SYSTEM_TIMESTAMP`） |
+| 显示 / 音频 / GPU / WiFi | ✅ | ✅（WiFi 需下面的兼容补丁） |
+| 摇杆 joypad | ✅ | ❌ 未移植（7.x 删了整数 GPIO API） |
+
+7.2.8 需要三件事，都在这里：
+
+1. **`build/k72-prepare.sh`** —— 打补丁 + 把 Rocknix 的 `panel-generic-dsi.c` 搬进
+   `drivers/gpu/drm/panel/`（主线没有 `rocknix,generic-dsi`），并把它挂进 Kconfig。
+   两个坑：Kconfig 条目必须在最后一个 `endmenu` **之前**，且依赖名是 `DRM_MIPI_DSI`
+   而不是 `MIPI_DSI` —— 写错时 `scripts/config --enable` **静默无效**，症状是面板驱动
+   根本不编译，开机黑屏。
+2. **面板驱动适配新 DRM 接口**：`hex2bin` 移到 `<linux/hex.h>`；`drm_panel_init()`
+   不再是驱动可用接口，改用 `devm_drm_panel_alloc(dev, struct generic_panel, panel,
+   funcs, DRM_MODE_CONNECTOR_DSI)`，它返回 **ERR_PTR**（不是 NULL），所以判空要写
+   `IS_ERR/PTR_ERR`。
+3. **`build/aic8800-7.2.8-compat.patch`**（221 行，4 个文件）—— 给 radxa-pkg 那份
+   AIC8800 驱动打上游 API 搬家补丁：`cfg80211_ops` 十几个回调首参
+   `net_device *` → `wireless_dev *`（用转发 wrapper，不动函数体）、
+   `cfg80211_new_sta/del_sta` 收 wdev、`get_tx_power` 多 `radio_idx`/`link_id`、
+   `remain_on_channel` 多 `rx_addr`、`in_irq()` → `in_hardirq()`、
+   **`strncpy()` 已从内核移除** → `strscpy()`、`ieee80211_mgmt` 的 action 内层 union
+   变匿名且 `action_code` 上提。打完 `make -C drivers/aic8800 KDIR=<tree> modules`
+   零 error，产物与真机验证过的那份**逐字节相同**。
+
+**换内核的安全网**（这套做法让升级变成低风险操作）：BOOT 分区里的文件全部带版本后缀
+（`Image` / `Image-7.2.8`、`rk3326-xifan-r36max2.dtb` / `…-7.2.8.dtb`、
+`boot.ini` / `boot-72.ini` / `boot-612.ini`），u-boot 只认 `boot.ini` 这个文件名，
+所以**切换 = 改文件名**，不重刷、不碰 eMMC，失败了长按断电换回来即可。
+
 ## 已知问题与未做
 
 - **睡眠能进不能出**：`echo mem` 进得去，电源键和 RTC 闹钟都叫不醒（只能长按强制断电）。
@@ -212,6 +249,13 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 - 蓝牙 `hci0: command 0x204b tx timeout`：AIC 的 BT 固件没配好，必要时 blacklist `btusb`。
 - 按键目前只有 input 事件，没有用户空间映射（掌机按键不能当键盘用：joystick 事件不会被
   内核 kbd handler 绑定，所以没法用按键登录）。
+- **7.2.8 上摇杆不可用**：7.x 删掉了整数 GPIO API（`gpio_get_value_cansleep`、
+  `gpio_is_valid`、`devm_gpio_request_one`）和 `include/linux/of_gpio.h`，而
+  `rocknix-joypad.c` 大量依赖它们 —— Rocknix 那个 gpiolib 回退补丁也因此
+  "File to patch" 找不到文件而冲突。两条路：把驱动改写成 gpiod 消费者 API
+  （按钮采集 / 轮询 / 震动三处，约 40-60 行，长期正确），或者纯用设备树里主线的
+  `adc-joystick` + `gpio-keys-polled`（不写驱动，但单 ADC 电压梯的组合键行为可能不如原
+  驱动）。6.12.79 那条线上摇杆是好的。
 - 1 GB RAM：没上 zram/swap，编译大项目要省着点。
 
 ## 许可与第三方来源
