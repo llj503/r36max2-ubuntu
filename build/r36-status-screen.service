@@ -1,0 +1,14 @@
+[Unit]
+Description=r36max2 status page on tty3 (redrawn every 45s)
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/r36-status-screen
+Restart=always
+RestartSec=5
+# do not let a stuck redraw spin the CPU
+CPUWeight=50
+
+[Install]
+WantedBy=multi-user.target

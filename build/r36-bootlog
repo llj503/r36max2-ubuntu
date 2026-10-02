@@ -1,0 +1,112 @@
+#!/bin/sh
+# r36-bootlog - dump the current state to the FAT boot partition so it can be read
+# from Windows without a keyboard, network or serial cable -> BOOT:\r36-boot.txt
+OUT=/tmp/r36-boot.txt
+M=/mnt/boot
+UP=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)
+
+mkdir -p "$M"
+if ! mount -t vfat -o shortname=mixed,fmask=0022,dmask=0022 "$(findfs LABEL=BOOT)" "$M" 2>/dev/null; then
+	echo "r36-bootlog: no BOOT partition" >&2
+	exit 0
+fi
+
+# Refresh every 2 min for the first 6 hours, after that only when asked for by
+# putting an empty file named "r36-log" on the BOOT partition.
+if [ "$UP" -gt 21600 ] && [ ! -e "$M/r36-log" ]; then
+	umount "$M"
+	exit 0
+fi
+rm -f "$M/r36-log"
+
+: > "$OUT"
+log() { echo "$@" >> "$OUT"; }
+
+log "===== r36max2 Ubuntu status ====="
+log "date     : $(date -Is)   uptime: ${UP}s"
+log "boot_id  : $(cat /proc/sys/kernel/random/boot_id)"
+log "kernel   : $(uname -a | tr -d '\n')"
+log "model    : $(cat /proc/device-tree/model 2>/dev/null | tr -d '\0')"
+log "cmdline  : $(cat /proc/cmdline)"
+log ""
+log "--- failed units ---"
+systemctl --failed --no-legend --plain >> "$OUT" 2>&1
+log ""
+log "--- interfaces ---"
+ip -brief addr show >> "$OUT" 2>&1
+ip route show >> "$OUT" 2>&1
+log "names: $(ls /sys/class/net | tr '\n' ' ')"
+for n in $(ls /sys/class/net); do
+	[ "$n" = lo ] && continue
+	log "$n: operstate=$(cat /sys/class/net/$n/operstate 2>/dev/null) carrier=$(cat /sys/class/net/$n/carrier 2>/dev/null) address=$(cat /sys/class/net/$n/address 2>/dev/null)"
+done
+log ""
+log "--- wifi ---"
+log "wlan0 device path: $(readlink -f /sys/class/net/wlan0/device 2>/dev/null)"
+log "iw reg get:"; iw reg get 2>&1 | head -8 >> "$OUT"
+log "rfkill:"; rfkill list >> "$OUT" 2>&1
+log "iw dev:"; iw dev >> "$OUT" 2>&1
+log "iw wlan0 link:"; iw dev wlan0 link >> "$OUT" 2>&1
+log "wpa_cli status:"; wpa_cli -i wlan0 status 2>&1 | tr '\n' ' ' >> "$OUT"; echo >> "$OUT"
+log "wpa units:"
+systemctl status 'wpa_supplicant*' --no-pager -n 0 2>&1 | grep -E '^\s*\*|Loaded|Active' >> "$OUT"
+log "resolv.conf: $(cat /etc/resolv.conf | tr '\n' ' ')"
+log ""
+log "--- usb topology (which controller carries the wifi chip) ---"
+for d in /sys/bus/usb/devices/*; do
+	[ -e "$d/idVendor" ] || continue
+	log "$(basename "$d") $(cat "$d/idVendor" 2>/dev/null):$(cat "$d/idProduct" 2>/dev/null) $(cat "$d/product" 2>/dev/null) bus=$(cat "$d/bMaxPower" 2>/dev/null)"
+done
+log "udc controllers: $(ls /sys/class/udc 2>/dev/null | tr '\n' ' ')"
+log ""
+log "--- networking services ---"
+for s in systemd-udevd systemd-udev-trigger systemd-networkd wpa_supplicant r36-wpa@wlan0 avahi-daemon ssh; do
+	log "$s: $(systemctl is-active $s 2>/dev/null) / $(systemctl is-enabled $s 2>/dev/null)"
+done
+log "networkctl list:"; networkctl list --no-legend --no-pager 2>&1 | head -8 >> "$OUT"
+log "wlan0 link file: $(ls /run/systemd/network/ | tr '\n' ' ')"
+log "udevd: $(ls -l /bin/udevadm /usr/bin/udevadm 2>/dev/null | head -1)"
+log "by-path: $(ls /dev/input/by-path/ 2>/dev/null | tr '\n' ' ')"
+log "snd nodes: $(ls /dev/snd/ 2>/dev/null | tr '\n' ' ')"
+log ""
+log "--- wifi driver detail ---"
+log "modules   : $(lsmod 2>/dev/null | awk '/aic/{print $1"="$3}' | tr '\n' ' ')"
+log "fw release: $(dmesg | grep -m1 -iE 'RELEASE DATE' | sed 's/.*RELEASE DATE//')"
+log "chip id   : $(dmesg | grep -m1 -iE 'chip_id=|unsupported id' )"
+log "uploads   : $(dmesg | grep -iE 'Upload |upload fail|calib' | tail -6 | tr '\n' ' | ')"
+log "wlan state: $(dmesg | grep -iE 'aic8800_fdrv|register interface' | tail -4 | tr '\n' ' | ')"
+log ""
+log "--- usb gadget (Type-C) ---"
+log "UDC       : $(cat /sys/kernel/config/usb_gadget/g1/UDC 2>/dev/null)"
+log "functions : $(ls /sys/kernel/config/usb_gadget/g1/functions 2>/dev/null | tr '\n' ' ')"
+log "gadget unit:"; systemctl status r36-usb-gadget --no-pager -n 0 2>&1 | grep -E 'Active|Loaded' >> "$OUT"
+log ""
+log "--- input devices ---"
+ls -l /dev/input/by-path/ 2>/dev/null >> "$OUT"
+grep -E '^[NPH]:' /proc/bus/input/devices 2>/dev/null | tr '\n' '|' | sed 's/|/\n/g' >> "$OUT"
+log ""
+log "--- audio / display / power ---"
+log "snd cards : $(cat /proc/asound/cards 2>/dev/null | tr '\n' ' ')"
+log "drm       : $(ls /sys/class/drm | tr '\n' ' ')"
+log "backlight : $(for b in /sys/class/backlight/*; do echo -n "$(basename "$b")=$(cat "$b/brightness" 2>/dev/null)/$(cat "$b/max_brightness" 2>/dev/null) "; done)"
+log "battery   : $(cat /sys/class/power_supply/battery/capacity 2>/dev/null)% status=$(cat /sys/class/power_supply/battery/status 2>/dev/null)"
+log ""
+log "--- dmesg: wifi / audio / firmware / errors ---"
+dmesg | grep -iE 'aic|wlan|cfg80211|regul|firmware|rk817|i2s|asoc|sound|defer|error|fail' | tail -50 >> "$OUT" 2>&1
+log ""
+log "--- journal (warnings and errors, this boot) ---"
+journalctl -b -p 4 --no-pager -n 120 -o short-iso >> "$OUT" 2>&1
+log ""
+log "--- disk / memory ---"
+df -h / >> "$OUT" 2>&1
+free -m >> "$OUT" 2>&1
+log "===== end ====="
+
+cp "$OUT" "$M/r36-boot.txt"
+sync
+umount "$M"
+
+# the screen is owned by r36-status-screen.service (tty3, redrawn every 45 s);
+# this script only writes the report onto the BOOT partition.
+
+echo "r36-bootlog: wrote $(wc -c < "$OUT") bytes to BOOT:\\r36-boot.txt"

@@ -1,0 +1,10 @@
+[Unit]
+Description=r36max2 periodic status report
+# ask for an extra snapshot: create an empty file named r36-log on the BOOT
+# partition (visible from Windows); it is deleted once the report is written
+[Timer]
+OnBootSec=40s
+OnUnitActiveSec=2min
+AccuracySec=20s
+[Install]
+WantedBy=timers.target

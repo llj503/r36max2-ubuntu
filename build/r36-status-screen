@@ -1,0 +1,53 @@
+#!/bin/sh
+# r36-status-screen - keep a readable status page on the console.
+# Drawing on a spare VT and chvt-ing to it proved unreliable here (the screen
+# stayed on the tty1 login prompt), and a black screen is the worst possible
+# outcome, so we simply clear the foreground console and redraw it every
+# ${INTERVAL}s.  Create an empty file "noscreen" on the BOOT partition to stop
+# this from the Windows side.
+INTERVAL=30
+MNT=/mnt/boot
+
+while :; do
+	mkdir -p "$MNT" 2>/dev/null
+	if mount -t vfat -o shortname=mixed,ro "$(findfs LABEL=BOOT)" "$MNT" 2>/dev/null; then
+		if [ -e "$MNT/noscreen" ]; then
+			umount "$MNT" 2>/dev/null
+			sleep 600
+			continue
+		fi
+		umount "$MNT" 2>/dev/null
+	fi
+
+	UP=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)
+	WLAN=$(ip -4 -br addr show wlan0 2>/dev/null | awk '{print $3}' | cut -d/ -f1)
+	[ -n "$WLAN" ] || WLAN="no ipv4"
+	OP=$(cat /sys/class/net/wlan0/operstate 2>/dev/null)
+	SIG=$(iw dev wlan0 link 2>/dev/null | awk '/signal/{print $2" dBm"; exit}')
+	DRV=$(dmesg | grep -i 'RELEASE DATE' | head -1 | sed -e 's/.*RELEASE DATE//' -e 's/^[ :]*//' -e 's/[ ]*$//')
+	[ -n "$DRV" ] || DRV="not loaded"
+	IFACES=$(ls /sys/class/net | tr '\n' ' ')
+	WPA=$(systemctl is-active r36-wpa@wlan0.service 2>/dev/null)
+	FAILED=$(systemctl --failed --no-legend --plain 2>/dev/null | wc -l)
+	BAT=$(cat /sys/class/power_supply/battery/capacity 2>/dev/null)
+
+	chvt 1 2>/dev/null
+	printf '\033[H\033[2J' > /dev/tty1 2>/dev/null
+	{
+		echo "=================================================="
+		echo " r36max2   $(awk -F'"' '/^PRETTY_NAME/{print $2}' /etc/os-release)"
+		echo " up ${UP}s   ifaces: $IFACES"
+		echo "=================================================="
+		echo " wlan0 ip : $WLAN"
+		echo " link     : $(iw dev wlan0 link 2>/dev/null | head -1)"
+		echo " state    : oper=${OP:-?}   signal: ${SIG:-n/a}"
+		echo " wpa      : ${WPA:-?}     wifi fw: $DRV"
+		echo " failed   : $FAILED units          batt: ${BAT:-?}%"
+		echo "=================================================="
+		echo " ssh ubuntu@${WLAN}    or  ubuntu@r36max2.local"
+		echo " report: BOOT:\\r36-boot.txt   kill this page: BOOT:\\noscreen"
+		echo "=================================================="
+	} > /dev/tty1 2>/dev/null
+
+	sleep "$INTERVAL"
+done

@@ -1,0 +1,8 @@
+[Unit]
+Description=r36max2 status report to the BOOT partition
+After=multi-user.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/r36-bootlog

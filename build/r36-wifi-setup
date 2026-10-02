@@ -1,0 +1,142 @@
+#!/bin/sh
+# r36-wifi-setup - let whoever flashed this card configure WiFi from the FAT
+# partition, because this board has no keyboard, no UART and no host-mode USB:
+# a text file on the BOOT partition is the only practical input channel.
+#
+# Runs at boot and then once a minute (r36-wifi-setup.timer).  Nothing happens
+# unless BOOT:\wifi.txt exists and its contents changed since the last apply,
+# so it is safe to leave enabled.
+#
+#   wifi.txt (在 Windows 记事本里写，两行，保存为 ANSI/UTF-8 都行):
+#       SSID=我的路由器
+#       PSK=我的密码至少8位
+#   可选第三行 COUNTRY=CN（默认 CN）
+#
+# 结果写回 BOOT:\wifi-status.txt（连上了给出 IP；连不上会附一份附近热点清单），
+# 所以在电脑上就能看到成没成，不用拍屏幕。
+set -u
+
+CONF=/etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+NET=/etc/systemd/network/80-wlan0.network
+STAMP=/var/lib/r36-wifi/applied
+MNT=/run/r36-boot
+log() { echo "r36-wifi-setup: $*"; }
+
+findfs_or_blkid() {
+    d=$(findfs LABEL=BOOT 2>/dev/null)
+    [ -n "$d" ] || d=$(blkid -L BOOT 2>/dev/null)
+    printf '%s' "$d"
+}
+
+BOOTDEV=$(findfs_or_blkid)
+[ -n "$BOOTDEV" ] || { log "no BOOT partition"; exit 0; }
+mkdir -p "$MNT"
+if mountpoint -q "$MNT"; then
+    MNT_PRE=1                      # somebody else already has it mounted; reuse it
+elif ! mount -o shortname=mixed,fmask=0022,dmask=0022 "$BOOTDEV" "$MNT" 2>/dev/null; then
+    log "mount $BOOTDEV failed"; exit 0
+fi
+leave() { [ "${MNT_PRE:-0}" = 1 ] || umount "$MNT" 2>/dev/null; }
+
+WIFIF="$MNT/wifi.txt"
+if [ ! -f "$WIFIF" ]; then
+    leave
+    exit 0                          # nothing to do; the baked-in config stays in charge
+fi
+
+NEWHASH=$(md5sum "$WIFIF" | cut -d' ' -f1)
+mkdir -p "$(dirname "$STAMP")"
+if [ -f "$STAMP" ] && [ "$NEWHASH" = "$(cat "$STAMP" 2>/dev/null)" ]; then
+    leave
+    exit 0                          # already applied
+fi
+
+SSID=$(grep -m1 -i '^SSID=' "$WIFIF" | cut -d= -f2- | tr -d '\r')
+PSK=$(grep -m1 -i '^PSK=' "$WIFIF" | cut -d= -f2- | tr -d '\r')
+COUNTRY=$(grep -m1 -i '^COUNTRY=' "$WIFIF" | cut -d= -f2- | tr -d '\r')
+[ -n "$COUNTRY" ] || COUNTRY=CN
+log "wifi.txt: SSID=[$SSID] psk-length=${#PSK} country=$COUNTRY"
+
+status() {   # $1 = text; write it back to the card so Windows can read it
+    {
+        echo "r36max2 WiFi setup - $(date -u '+%Y-%m-%d %H:%M:%S') UTC"
+        echo "$1"
+        echo
+        echo "--- current state ---"
+        ip -4 -br addr show wlan0 2>&1
+        iw dev wlan0 link 2>&1 | head -3
+        systemctl is-active r36-wpa@wlan0.service 2>&1 | sed 's/^/wpa: /'
+    } > "$MNT/wifi-status.txt" 2>/dev/null
+    sync
+}
+
+scan_list() {
+    iw dev wlan0 scan 2>/dev/null | awk '/^SSID:/{sub(/^SSID: */,""); print "  " $0}' | head -25
+}
+
+if [ -z "$SSID" ]; then
+    status "FAIL: wifi.txt has no SSID= line (nothing was changed)"
+    echo "$NEWHASH" > "$STAMP"
+    leave
+    exit 0
+fi
+
+# wpa_passphrase does the escaping and hashes the passphrase, so the plaintext
+# never lands on the rootfs.
+TMP="$CONF.new"
+{
+    printf 'ctrl_interface=DIR=/run/wpa_supplicant GROUP=netdev\n'
+    printf 'update_config=1\n'
+    printf 'country=%s\n\n' "$COUNTRY"
+    if [ -n "$PSK" ]; then
+        # wpa_passphrase echoes the plaintext as a "#psk=..." comment - drop it,
+        # the point of using wpa_passphrase is that only the PBKDF2 hash is stored.
+        wpa_passphrase "$SSID" "$PSK" | grep -v '^[[:space:]]*#psk='
+    else
+        printf 'network={\n    ssid="%s"\n    key_mgmt=NONE\n}\n' "$SSID"
+    fi
+} > "$TMP" 2>/dev/null
+if [ ! -s "$TMP" ]; then
+    status "FAIL: wpa_passphrase produced nothing (SSID or PSK contains characters the shell mangled?)"
+    rm -f "$TMP"; echo "$NEWHASH" > "$STAMP"
+    leave
+    exit 0
+fi
+chmod 600 "$TMP"
+mv "$TMP" "$CONF"
+iw reg set "$COUNTRY" 2>/dev/null
+echo "$NEWHASH" > "$STAMP"
+
+systemctl restart r36-wpa@wlan0.service 2>/dev/null
+i=0
+while [ $i -lt 40 ]; do
+    sleep 1
+    iw dev wlan0 link 2>/dev/null | grep -q '^Connected' && break
+    i=$((i + 1))
+done
+
+if iw dev wlan0 link 2>/dev/null | grep -q '^Connected'; then
+    systemctl restart systemd-networkd 2>/dev/null
+    j=0
+    while [ $j -lt 20 ]; do
+        sleep 1
+        ip -4 -br addr show wlan0 2>/dev/null | awk '{print $3}' | grep -q '^[0-9]' && break
+        j=$((j + 1))
+    done
+    IP=$(ip -4 -br addr show wlan0 2>/dev/null | awk '{print $3}' | cut -d/ -f1)
+    if [ -n "$IP" ]; then
+        status "OK: connected to $SSID, IPv4=$IP  (ssh root@$IP)"
+        log "connected, $IP"
+    else
+        status "PARTIAL: associated to $SSID but no IPv4 lease yet (DHCP). Check 80-wlan0.network / your router."
+        log "associated, no lease"
+    fi
+else
+    status "FAIL: cannot associate with '$SSID'. Neighbouring networks:"
+    { echo; scan_list; } >> "$MNT/wifi-status.txt" 2>/dev/null
+    sync
+    log "association failed"
+fi
+
+leave
+exit 0

@@ -1,0 +1,39 @@
+# 换行符：仓库里的脚本、设备树、单元文件必须是 LF。
+# Windows 上的 git 默认 core.autocrlf=true，checkout 时会把 .sh 变成 CRLF，
+# 那样 r36-bootlog / r36-wpa@.service 在设备上直接跑不动（bash: /bin/bash^M）。
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.c         text eol=lf
+*.h         text eol=lf
+*.py        text eol=lf
+*.js        text eol=lf
+*.ps1       text eol=crlf
+*.dts       text eol=lf
+*.dtsi      text eol=lf
+*.service   text eol=lf
+*.timer     text eol=lf
+*.conf      text eol=lf
+*.md        text eol=lf
+*.patch     text eol=lf
+Makefile    text eol=lf
+
+# 二进制：永远不要碰
+*.img       binary
+*.img.xz    binary
+*.xz        binary
+*.gz        binary
+*.iso       binary
+*.dtb       binary
+*.ko        binary
+*.png       binary
+*.jpg       binary
+*.pdf       binary
+
+# 让 GitHub 按语言正确高亮这些没有扩展名的文件
+build/r36-bootlog          text eol=lf linguist-language=Shell
+build/r36-status-screen    text eol=lf linguist-language=Shell
+build/r36-expand-root      text eol=lf linguist-language=Shell
+build/r36-finish-expand    text eol=lf linguist-language=Shell
+build/r36-fwswap           text eol=lf linguist-language=Shell
+build/r36-usb-gadget       text eol=lf linguist-language=Shell

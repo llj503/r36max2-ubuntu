@@ -1,0 +1,30 @@
+#!/bin/sh
+# r36-usb-gadget - expose the USB-C (dwc2) port as a RNDIS network card so the
+# handheld can be reached over a plain USB cable, with no WiFi and no keyboard.
+# Device side gets 192.168.7.2; set the PC's new "RNDIS/Ethernet" adapter to
+# 192.168.7.1/24 and then:  ssh ubuntu@192.168.7.2
+set -e
+G=/sys/kernel/config/usb_gadget/g1
+UDCD=/sys/class/udc
+
+[ -d "$G" ] || mkdir -p "$G"
+cd "$G"
+mkdir -p strings/0x409 2>/dev/null || true
+echo 0x1d6b > idVendor          # Linux Foundation
+echo 0x0104 > idProduct         # Network Control Model (RNDIS here reuses it)
+echo 0x0102 > bcdDevice
+[ -f strings/0x409/manufacturer ] || echo r36max2 > strings/0x409/manufacturer
+echo "R36Max2 Ubuntu" > strings/0x409/product 2>/dev/null || true
+mkdir -p configs/b.1/strings/0x409 2>/dev/null || true
+echo 0xc > configs/b.1/bmAttributes     # self-powered + remote wakeup
+echo 100 > configs/b.1/MaxPower
+
+mkdir -p functions/rndis.usb0 2>/dev/null || true
+ln -s functions/rndis.usb0 configs/b.1/ 2>/dev/null || true
+
+if [ ! -e UDC ] || [ -z "$(cat UDC)" ]; then
+	UDC=$(for u in "$UDCD"/*; do basename "$u"; done | head -1)
+	[ -n "$UDC" ] || { echo "r36-usb-gadget: no UDC controller, giving up"; exit 1; }
+	echo "$UDC" > UDC
+fi
+echo "r36-usb-gadget: bound UDC=$(cat UDC) functions=$(ls functions)"

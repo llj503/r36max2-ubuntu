@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply BOOT:\wifi.txt to wpa_supplicant (no keyboard on this board)
+After=systemd-udevd.service network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/r36-wifi-setup
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,29 @@
+#!/bin/sh
+# r36-fwswap - use an alternative set of AIC firmware blobs from the FAT BOOT
+# partition instead of the ones installed in /lib/firmware.  Nothing to reflash:
+# drop the wanted files in BOOT:\fw\aic8800DC\ and create an empty BOOT:\use-boot-fw.
+M=/mnt/boot
+ALT=$M/fw/aic8800DC
+
+mkdir -p "$M"
+mount -t vfat -o shortname=mixed "$(findfs LABEL=BOOT)" "$M" 2>/dev/null || { echo "r36-fwswap: no BOOT partition"; exit 0; }
+
+if [ ! -e "$M/use-boot-fw" ] || [ ! -d "$ALT" ]; then
+	echo "r36-fwswap: not requested (need $M/use-boot-fw and $ALT), leaving /lib/firmware in charge"
+	umount "$M"
+	exit 0
+fi
+
+echo "$M/fw" > /sys/module/firmware_class/parameters/path
+echo "r36-fwswap: firmware search path now $(cat /sys/module/firmware_class/parameters/path)"
+ls "$ALT" | tr '\n' ' '; echo
+
+rmmod aic8800_fdrv 2>/dev/null || true
+rmmod aic_load_fw  2>/dev/null || true
+sleep 1
+modprobe aic_load_fw
+modprobe aic8800_fdrv
+sleep 6
+echo "r36-fwswap: wlan0 = $(ls /sys/class/net | tr '\n' ' ')"
+dmesg | tail -25
+umount "$M"

@@ -1,0 +1,63 @@
+#!/bin/sh
+# r36-expand-root - grow the Ubuntu root partition to fill the rest of the SD card.
+# It only moves the END of the last partition forward; nothing is relocated, so the
+# existing filesystem and its data are untouched. Safe to re-run.
+set -e
+
+MARK=/var/lib/r36-expand-pending
+
+ROOT=$(findfs LABEL=UBUNTU) || { echo "r36-expand: no partition with label UBUNTU"; exit 1; }
+B=$(basename "$ROOT")
+D=$(echo "$B" | sed -E 's/(p[0-9]+|[0-9]+)$//')
+DISK=/dev/$D
+
+DEVSEC=$(blockdev --getsz "$DISK")                 # 512-byte sectors
+sfdisk -d "$DISK" > /tmp/r36-pt.orig
+P1START=$(partx -g -o START --nr 1 "$DISK")
+P1SIZE=$(partx -g -o SECTORS --nr 1 "$DISK")
+P2START=$(partx -g -o START --nr 2 "$DISK")
+P2SIZE=$(partx -g -o SECTORS --nr 2 "$DISK")
+
+echo "r36-expand: disk=$DISK sectors=$DEVSEC"
+echo "r36-expand: p1 start=$P1START size=$P1SIZE   p2(root) start=$P2START size=$P2SIZE"
+
+# Refuse to touch anything that is not the layout this image ships with.
+if [ "${P1START:-0}" != "32768" ] || [ "${P1SIZE:-0}" != "229376" ] || [ "${P2START:-0}" != "262144" ]; then
+	echo "r36-expand: unexpected partition table, refusing to modify it"
+	cat /tmp/r36-pt.orig
+	exit 1
+fi
+
+TAIL=2048                                   # keep 1 MiB free at the end of the card
+NEW=$((DEVSEC - P2START - TAIL))
+if [ "$NEW" -le "$P2SIZE" ]; then
+	echo "r36-expand: the partition already fills the card, nothing to do"
+	exit 0
+fi
+
+{
+	printf 'label: dos\nunit: sectors\n\n'
+	printf 'start=32768, size=229376, type=c, bootable\n'
+	printf 'start=%s, size=%s, type=83\n' "$P2START" "$NEW"
+} > /tmp/r36-pt.new
+
+# sfdisk option support differs between util-linux versions, so try the
+# gentlest form first and fall back.
+if ! sfdisk --no-reread --lock=no "$DISK" < /tmp/r36-pt.new 2>/dev/null; then
+	sfdisk --force --no-reread "$DISK" < /tmp/r36-pt.new
+fi
+sync
+echo "r36-expand: partition table rewritten (p2 size $P2SIZE -> $NEW)"
+
+partx -u "$DISK" 2>/dev/null || true
+NEWSIZE=$(blockdev --getsz "$ROOT")
+if [ "$NEWSIZE" -gt "$P2SIZE" ]; then
+	resize2fs "$ROOT"
+	rm -f "$MARK"
+	echo "r36-expand: done - the filesystem now uses the whole card, no reboot needed"
+	echo "r36-expand: try 'df -h /'"
+else
+	touch "$MARK"
+	echo "r36-expand: the kernel kept the old size because the rootfs is mounted."
+	echo "r36-expand: run 'reboot'; r36-resize-root.service finishes it during boot."
+fi

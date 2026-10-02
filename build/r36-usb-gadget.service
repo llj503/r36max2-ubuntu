@@ -1,0 +1,11 @@
+[Unit]
+Description=r36max2 USB-C RNDIS gadget network (ssh over a USB cable)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/r36-usb-gadget
+
+[Install]
+WantedBy=multi-user.target

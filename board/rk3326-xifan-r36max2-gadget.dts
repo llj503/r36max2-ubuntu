@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/* r36max2 with the dwc2 pinned to peripheral mode -> USB gadget networking */
+#include "rk3326-xifan-r36max2.dts"
+
+&usb20_otg {
+	dr_mode = "peripheral";
+	vbus-supply = <&vbus_host1>;
+};

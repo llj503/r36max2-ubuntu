@@ -1,0 +1,23 @@
+[Unit]
+Description=r36max2 WPA supplicant on %i
+After=systemd-modules-load.service systemd-udevd.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=simple
+RuntimeDirectory=wpa_supplicant
+RuntimeDirectoryMode=0750
+Group=netdev
+# The AIC8800DC only shows up after its firmware upload, which can be later than
+# network-pre.target, and a Requires=sys-subsystem-net-devices-%i.device
+# dependency is useless if udev is not running.  So poll for the interface and
+# retry forever instead.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 180); do [ -e /sys/class/net/%i ] && exit 0; sleep 1; done; echo "r36-wpa@%i: interface never appeared"; exit 1'
+ExecStartPre=/bin/sh -c 'for d in /sys/class/rfkill/rfkill*; do [ -e "$d/state" ] && echo 1 > "$d/state"; done; exit 0'
+ExecStart=/usr/sbin/wpa_supplicant -c/etc/wpa_supplicant/wpa_supplicant-%i.conf -i%i -s -O DIR=/run/wpa_supplicant GROUP=netdev
+Restart=always
+RestartSec=5
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

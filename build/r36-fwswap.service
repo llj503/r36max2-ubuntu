@@ -1,0 +1,13 @@
+[Unit]
+Description=r36max2 AIC firmware override from the BOOT partition (inert without BOOT:\use-boot-fw)
+After=systemd-modules-load.service
+Before=wpa_supplicant-nl80211@wlan0.service
+Wants=wpa_supplicant-nl80211@wlan0.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/r36-fwswap
+
+[Install]
+WantedBy=multi-user.target

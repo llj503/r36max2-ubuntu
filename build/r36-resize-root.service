@@ -1,0 +1,14 @@
+# r36max2: finish the root-partition expansion started by `r36-expand-root`.
+# Harmless no-op unless /var/lib/r36-expand-pending exists.
+[Unit]
+Description=r36max2 grow root filesystem after partition expansion
+After=local-fs.target
+ConditionPathExists=/var/lib/r36-expand-pending
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/r36-finish-expand
+
+[Install]
+WantedBy=multi-user.target

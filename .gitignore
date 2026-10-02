@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# 这个仓库只放"我们自己写的东西"：板级设备树、构建脚本、rootfs 配置、GPU demo。
+# 下面这些一律不入库：镜像/压缩包/二进制 blob、第三方源码、抓下来的显存原始数据，
+# 以及任何带密码的文件。
+# ---------------------------------------------------------------------------
+
+# 磁盘镜像与归档
+*.img
+*.img.xz
+*.xz
+*.gz
+*.zip
+*.iso
+*.tar
+*.tar.*
+
+# 编译中间产物与二进制
+*.o
+*.a
+*.ko
+*.mod
+*.mod.c
+*.dtb
+*.so
+*.ppm
+*.raw
+*.rle
+
+# --- 秘密：WiFi 凭据与由它生成的 supplicant 配置 ---
+build/wifi-cred.txt
+**/wpa_supplicant-*.conf
+**/*.key
+**/id_rsa*
+
+# --- 第三方源码（脚本会自己下载/解压，不在这里再分发一份）---
+build/wifi/
+build/aic-src/
+build/rocknix/
+build/joypad/rocknix-joypad.tar.gz
+
+# --- 从设备/卡上抓下来的原始物证，体积大且与代码无关 ---
+artifacts/
+downloads/
+logs/
+out/*.img
+out/*.img.xz
+shots/screen-*.png
+
+# --- 本机杂项 ---
+*.pdf
+*.jpg
+*.jpeg
+*.png
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 保留：README 引用的两张验收图
+!shots/gl-frame.png
+!001.jpg

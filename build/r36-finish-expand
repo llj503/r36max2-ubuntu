@@ -1,0 +1,15 @@
+#!/bin/sh
+# r36-finish-expand - called by r36-resize-root.service on every boot.
+# Grows the ext4 filesystem when r36-expand-root enlarged the partition but the
+# kernel could not pick up the new size while the rootfs was mounted.
+set -e
+
+MARK=/var/lib/r36-expand-pending
+[ -e "$MARK" ] || exit 0
+
+ROOT=$(findfs LABEL=UBUNTU) || exit 0
+echo "r36-finish-expand: growing $ROOT"
+resize2fs "$ROOT"
+rm -f "$MARK"
+echo "r36-finish-expand: done"
+df -h /
