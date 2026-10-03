@@ -305,6 +305,12 @@ def main():
     ap = argparse.ArgumentParser(description="joystick-driven on-screen keyboard")
     ap.add_argument("--start", choices=sorted(PAGES), default="letters")
     ap.add_argument("--type", metavar="TEXT", help="type TEXT and exit (no wofi)")
+    ap.add_argument("--keys", metavar="NAMES",
+                    help="inject named keys from /dev/uinput, comma separated, e.g. "
+                         "DOWN,DOWN,ENTER - lets you drive a GUI from SSH and prove "
+                         "which window really has keyboard focus")
+    ap.add_argument("--hold", type=float, default=0.06, metavar="SEC",
+                    help="how long --keys holds each key down (default 0.06)")
     ap.add_argument("--settle", type=float, default=0.15,
                     help="seconds to wait for weston to restore focus (default .15)")
     ap.add_argument("--pick-timeout", type=int, default=1800,
@@ -378,6 +384,23 @@ def main():
                     print("  sent %s" % shown)
             print("  typed %d characters through /dev/uinput" % len(args.type))
             return 0
+        if args.keys is not None:
+            names = [n.strip().upper() for n in args.keys.split(",") if n.strip()]
+            done = 0
+            for nm in names:
+                if nm not in K:
+                    print("  !! unknown key %r (known: %s)" % (nm, " ".join(sorted(K))),
+                          file=sys.stderr)
+                    continue
+                kb.hold(K[nm], True)
+                time.sleep(0.06)               # hold it a moment: some clients poll
+                kb.hold(K[nm], False)
+                done += 1
+                if args.verbose:
+                    print("  tapped %s" % nm)
+                time.sleep(0.09)
+            print("  injected %d/%d key presses through /dev/uinput" % (done, len(names)))
+            return 0
         page, latch, caps, n = args.start, False, False, 0
         stall = pipeline_stalled()
         if stall > 0:
@@ -387,11 +410,14 @@ def main():
             print("     recovers it (measured on this board).")
         elif stall < 0:
             print("  (kernel log unreadable - cannot tell whether the panel is live)")
-        print("  r36-osk: click a key with the joystick pointer. X or Esc quits.")
+        print("  r36-osk up.  The grid holds keyboard focus, so the joystick keys work")
+        print("  directly:  D-pad = move highlight,  START = pick that key,")
+        print("             SELECT = cancel,  A/left-click also picks what is under")
+        print("  the pointer.  Page keys ABC / #!? / nav switch pages, X quits.")
         sys.stdout.flush()
         while True:
             state = " ".join(x for x in ("SHFT" if latch else "", "CAPS" if caps else "") if x)
-            sel = wofi_grid(page, "r36-osk %s %s [%d]" % (page, state, n),
+            sel = wofi_grid(page, "r36-osk %s %s #%d | dpad=move START=pick" % (page, state, n),
                             timeout=args.pick_timeout)
             if sel is None:
                 break

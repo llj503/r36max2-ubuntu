@@ -68,6 +68,32 @@ case "${1:-status}" in
         shift
         python3 /usr/local/bin/r36-shot.py "${1:-/tmp/r36-shot.png}"
         ;;
+    osk)
+        # on-screen keyboard driven by the joystick pointer.  Anything after `osk`
+        # goes to r36-osk:  r36-wayland osk --start symbols
+        ensure_up || exit 1
+        shift
+        env $WENV setsid /usr/local/bin/r36-osk "$@" >/tmp/r36-osk.log 2>&1 &
+        sleep 2
+        echo "  r36-osk started - the grid should be on the panel."
+        echo "  log:    tail -f /tmp/r36-osk.log"
+        echo "  stop:   pkill -f r36-osk        (the uinput keyboard dies with it)"
+        ;;
+    wedge)
+        # How many flip/vblank stalls has the kernel logged?  On this board any
+        # nonzero count means the panel is showing a STALE FRAME: commits stopped
+        # completing, so a window can exist and be perfectly mapped and still be
+        # invisible.  Check this before ever asking someone to look at the screen.
+        n=$(journalctl -b -k --no-pager 2>/dev/null | grep -cE 'vblank wait timed out|wait_for_vblanks|flip_done timed out')
+        echo "  flip/vblank stall messages since boot: $n"
+        if [ "$n" != 0 ]; then
+            echo "  => panel is very likely frozen on an old frame. Restarting weston does"
+            echo "     NOT recover it (measured: every new frame fails with EBUSY); only a"
+            echo "     reboot clears it. Do not run a clicking test right now."
+        else
+            echo "  => no stalls: commits complete, the panel should be showing live frames"
+        fi
+        ;;
     apps)
         echo "  installed Wayland clients:"
         ls /usr/bin | grep -E "^weston-|^(foot|wofi|weston-terminal)$" | sed 's/^/     /' | head -30
@@ -78,6 +104,6 @@ case "${1:-status}" in
         ;;
     *)
         sed -n '1,20p' "$0"
-        echo "usage: r36-wayland {start|stop|restart|status|run <app>|egl|term|smoke [s]|shot [file]|apps|env}"
+        echo "usage: r36-wayland {start|stop|restart|status|run <app>|egl|term|smoke [s]|shot [file]|osk [args]|wedge|apps|env}"
         ;;
 esac

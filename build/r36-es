@@ -1,0 +1,114 @@
+#!/bin/sh
+# r36-es - run EmulationStation on this board.
+#
+# Both display paths work here - measured 2026-10-03, and the earlier "kmsdrm hangs"
+# claim was MY artifact, not the board:
+#   * kmsdrm (no compositor): plain SDL2 window + GL 3.1 (Mali-G31/Panfrost) + swap
+#     succeeded with zero stall messages, as long as nothing else holds DRM master.
+#     `sleep 2` after `systemctl stop weston` is NOT enough; SDL then blocks waiting
+#     for the master and looks hung.  Wait for the weston process to actually be gone.
+#   * weston/Wayland: works too, but weston has twice lost the VOP's vblank permanently
+#     after ~23-45 min (stall WARNs, then every frame "Device or resource busy", only a
+#     reboot clears it).  Still unexplained.
+# ES's GL backend is GLES3 (built with -DGLES3=1), which panfrost provides.
+#
+#   r36-es                 # ES inside the weston session (starts weston if needed)
+#   r36-es --kmsdrm        # ES on the bare console, master properly released
+#   r36-es --test 15       # start, run 15 s, quit, report what happened
+#   r36-es --status        # binary, weston, clients, stall counter
+#   r36-es --stop          # kill ES, leave weston alone
+ES=${ES_BIN:-/root/esrn/build/es-app/emulationstation}
+RT=/run/wayland
+SOCK=wayland-0
+
+stall() { journalctl -b -k --no-pager 2>/dev/null | grep -cE 'vblank wait timed out|wait_for_vblanks|flip_done timed out'; }
+
+need_weston() {
+    [ -S "$RT/$SOCK" ] && return 0
+    echo "  starting weston (ES needs a compositor on this board)"
+    systemctl start weston
+    i=0
+    while [ $i -lt 20 ]; do
+        [ -S "$RT/$SOCK" ] && return 0
+        sleep 0.5
+        i=$((i + 1))
+    done
+    echo "  !! weston socket never appeared:"
+    journalctl -u weston --no-pager -n 15
+    return 1
+}
+
+run_es() {
+    export XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$SOCK
+    export SDL_VIDEODRIVER=wayland SDL_AUDIODRIVER=alsa
+    export HOME=${HOME:-/root}
+    # stdbuf: ES is often killed by a timer during testing, and a killed process
+    # loses its buffered stdout - which reads as "the log is empty, it never ran"
+    setsid stdbuf -oL -eL "$ES" --no-splash "$@" > /tmp/es-run.log 2>&1 &
+}
+
+case "${1:-run}" in
+    --status|status)
+        echo "  es binary : $(ls -l $ES 2>/dev/null | awk '{print $5" bytes"}' || echo "MISSING at $ES (build not finished?)")"
+        echo "  weston    : $(systemctl is-active weston)  socket=$([ -S $RT/$SOCK ] && echo yes || echo no)"
+        echo "  es procs  : $(pgrep -a -f 'emulationstation' | head -3 | tr '\n' ' ')"
+        echo "  roms      : $(ls /root/roms 2>/dev/null | head -6 | tr '\n' ' ')"
+        echo "  config    : $(ls /root/.emulationstation 2>/dev/null | tr '\n' ' ')"
+        echo "  stall since boot: $(stall)"
+        ;;
+    --stop)
+        pkill -f 'emulationstation' 2>/dev/null
+        echo "  es procs after pkill: $(pgrep -c -f emulationstation)   weston=$(systemctl is-active weston)"
+        ;;
+    --kmsdrm)
+        shift
+        # the whole point of these lines: wait until the card is really free,
+        # otherwise SDL blocks on drmSetMaster and looks like a kernel hang
+        if systemctl is-active --quiet weston; then
+            echo "  stopping weston and waiting for it to release DRM master..."
+            systemctl stop weston 2>/dev/null
+        fi
+        i=0
+        while [ $i -lt 40 ] && pgrep -x weston >/dev/null; do sleep 3; i=$((i + 3)); done
+        echo "  weston=$(systemctl is-active weston) procs=$(pgrep -cx weston) card0 holders=[$(fuser /dev/dri/card0 2>/dev/null | tr '\n' ' ')]"
+        if [ "$(pgrep -cx weston)" != 0 ]; then
+            echo "  !! something still holds the console; refusing to start (it would just block)"
+            exit 1
+        fi
+        chvt 1 2>/dev/null
+        export SDL_VIDEODRIVER=kmsdrm SDL_AUDIODRIVER=alsa XDG_VTNR=1 HOME=${HOME:-/root}
+        unset WAYLAND_DISPLAY XDG_RUNTIME_DIR
+        echo "  stall counter before start: $(stall)"
+        exec stdbuf -oL -eL "$ES" --fullscreen --no-splash "$@"
+        ;;
+    --test)
+        T=${2:-15}
+        need_weston || exit 1
+        s0=$(stall)
+        run_es
+        i=0
+        while [ $i -lt "$T" ]; do
+            sleep 3; i=$((i + 3))
+            echo "  t=${i}s alive=$(pgrep -c -f emulationstation) stall=$(stall)"
+        done
+        echo "  --- es-run.log ---"
+        head -30 /tmp/es-run.log 2>/dev/null | sed 's/^/     /'
+        alive=$(pgrep -c -f emulationstation)
+        pkill -f 'emulationstation' 2>/dev/null
+        echo "  survived the window: $([ "$alive" != 0 ] && echo YES || echo 'no - it exited')"
+        echo "  stalls before=$s0 after=$(stall)"
+        echo "  weston complaints: $(journalctl -u weston --no-pager --since '-60 seconds' 2>/dev/null | grep -cE 'Device or resource busy|repaint-flush failed')"
+        ;;
+    ""|run)
+        need_weston || exit 1
+        shift 2>/dev/null || true
+        run_es "$@"
+        sleep 3
+        echo "  ES started (log /tmp/es-run.log, alive=$(pgrep -c -f emulationstation))."
+        echo "  quit: hold the MODE/Super button + start, or: r36-es --stop"
+        ;;
+    *)
+        sed -n '1,20p' "$0"
+        echo "usage: r36-es [--status|--stop|--test SECS|--kmsdrm|run]"
+        ;;
+esac

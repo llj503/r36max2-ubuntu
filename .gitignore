@@ -62,3 +62,9 @@ desktop.ini
 # python bytecode from the helper scripts
 __pycache__/
 *.pyc
+
+# user-downloaded binaries, never in git (132MB AppImage tested on the board)
+*.AppImage
+
+# large vendored upstream data - keep the extracted result + its URL instead
+build/vendor/
