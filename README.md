@@ -27,7 +27,8 @@ rootfs 打包脚本、无串口时的调试通道、GPU 上层验证。
 | 按键 / 摇杆 / 电压采样 | ✅ | `retrogame_joypad`、`adc-keys`、`rk805 pwrkey` |
 | 声音（rk817 codec + 外接功放） | ✅ | 耳机与喇叭都实测有声 |
 | GPU（panfrost + Mesa + GBM + EGL） | ✅ | `Mali-G31 MC1 (Panfrost)`，GLES 3.1，见下文 |
-| Wayland 图形会话（weston 14） | ✅（截图权限除外） | `r36-wayland start` 后 foot/GL 客户端/wofi 同开，见下文 |
+| Wayland 图形会话（weston 14） | ⚠️ 起得来、能合成，但会让 VOP 翻页永久卡死（只能重启） | `r36-wayland start`，见下文 |
+| 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对 | `build/r36-keymapper.py`，见下文 |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
@@ -215,9 +216,55 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
      总共 80+8+4+4×64×4 = **1116 字节**，写 1120 直接 `EINVAL`。
      注入按键时还顺手撞开了 weston 的 flight recorder（`Ctrl+Alt+P` 起 / 再按停，
      30 秒写出 `/capture.wcap` 10 MB、524 帧，magic `PACWXR24`），那是合成器侧调试的现成数据源。
+- **⚠️ 7.2.8 上 weston 会把显示管线永久卡死（真机踩到，只有重启能清）**：weston 启动日志里就写着
+  `DRM: does not support Atomic async page flip`（RK3326 的 VOP 没有原子异步翻页），于是内核走
+  `drm_atomic_helper_commit_tail_rpm` 这条**在提交里同步等 vblank** 的退路。跑了 23 分钟、
+  客户端退出拆面的时候出现第一条 `WARNING drivers/gpu/drm/drm_atomic_helper.c:1921 ... wait_for_vblanks`，
+  之后 `rockchip-drm: vblank wait timed out on crtc 0` / `flip_done timed out` /
+  `[CRTC:39:crtc-0] commit wait timed out` 每 10–40 秒循环，面板冻在最后一帧（看起来是"白屏带四角暗块"）。
+  **停 weston、`chvt 1`、写 `fb0/blank=0` 都救不回来**，vsync 中断已经不再来了。下次尝试顺序：
+  `[core] pageflip-timeout=500` → 一次只开一个客户端并盯 `journalctl -k` → 切 `boot-612.ini` 做 A/B
+  （6.12 上我们自己的 GBM 直出翻页能跑到 29.8 fps，所以能区分是 weston 的翻页方式还是 7.2 的
+  rockchip-drm 回归）。两个恢复陷阱：`weston.service` 的 `ExecStopPost=chvt 1` 在装 `kbd` 之前
+  是**静默失败**的（这镜像原本没有 chvt/fgconsole，所以"active vt"一直打印空）；刚开机
+  `fb0 blank` 读数是 4（DPMS 关闭），往 tty1 写一次东西才亮——**没键盘的机器上"屏黑"和"死机"
+  长得一模一样，别急着长按电源**。
 - 刻意设置的：`locking=false` + `idle-time=0` —— 这台机器睡眠进得去出不来，一个锁掉的
   屏等于把设备关小黑屋；`gbm-format=xrgb8888` 与之前 GBM/EGL 验证选到的格式一致；
   光标缺 `dnd-*` 只影响拖拽图标，无功能性问题。
+
+## 摇杆当键鼠用（uinput 桥）
+
+`build/r36-keymapper.py`（纯标准库）读摇杆的 evdev 节点，用 `/dev/uinput` 造一个键盘 +
+一个鼠标重新发出去。内核内建 uinput，不需要模块，**也不需要合成器在跑**——验证映射的方法
+就是读那两个新 event 节点，完全不碰 DRM，所以它能安全地单独使用、单独关掉。
+
+| 摇杆 | 发出 | 实测 |
+| --- | --- | --- |
+| 左摇杆 | `REL_X/REL_Y`，死区 ±220、满推 24 px/tick、1.7 次曲线 | 单 tick 最大 ±24 ✓ |
+| 右摇杆 | `REL_WHEEL(_HI_RES)` / `REL_HWHEEL(_HI_RES)`，每 0.16s 一格 | ±1 格 / ±120 hi-res ✓ |
+| A / B / L3 | `BTN_LEFT` / `BTN_RIGHT` / `BTN_MIDDLE` | down/up 成对 ✓ |
+| X / Y | `KEY_BACKSPACE` / `KEY_SPACE` | ✓ |
+| 方向键 | `KEY_UP/DOWN/LEFT/RIGHT` | ✓ |
+| SELECT / START / MODE | `KEY_ESC` / `KEY_ENTER` / `KEY_LEFTMETA` | ✓ |
+| L / R / L2 / R2 | `KEY_LEFTCTRL` / `KEY_LEFTALT` / `KEY_LEFTSHIFT` / `KEY_TAB` | ✓ |
+| R3 | `KEY_END` | ✓ |
+
+17 个键 + 4 根轴全部实机验过，没有"只 down 没 up"的卡键。
+
+- 用法：临时跑 `systemd-run --unit=r36-km-test /usr/bin/python3 /usr/local/bin/r36-keymapper.py -v`，
+  `systemctl stop r36-km-test` 就还原；长期用则是 `r36-keymapper.service`
+  （`BindsTo=weston.service` + `WantedBy=weston.service`，起合成器自动带上、停合成器自动撤）。
+  默认 `EVIOCGRAB` 抓走摇杆节点，避免同一按键既当按键又当手柄；`--no-grab` 可并存，
+  `--selftest` 只打印映射表不碰设备，`--dry-run` 只读不发。
+- **两个必须记的坑**：① `REL_MAX` 只有 **0x0f** —— `REL_WHEEL=8`、`REL_HWHEEL=6`，
+  按 27/28 传 `UI_SET_RELBIT` 直接 `EINVAL`，鼠标设备根本建不起来（键盘却是好的，
+  所以现象像"只有一半能用"）；② `struct uinput_user_dev` 必须**正好 1116 字节**
+  （abs 数组是 `__s32`，`ff_effects_max` 后面没有填充），多 4 字节就 EINVAL，
+  且写记录要在 `UI_DEV_CREATE` 之前。
+- 设计取舍：滚轮值是**格数**不是像素（第一版复用指针速度曲线，一次翻 23 格＝整页飞）；
+  17 个键覆盖不了字母输入，**打字仍然要靠 SSH 或屏上键盘**。这座桥的目标是"指针 + 最常用键"，
+  不是虚拟全键盘。
 
 ## 换网络 / 交给别人用（这块板子没有键盘也没有串口）
 

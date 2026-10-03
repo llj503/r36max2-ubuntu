@@ -1,0 +1,26 @@
+# /etc/systemd/system/r36-keymapper.service
+#
+# The joypad -> mouse/keyboard bridge.  It exists only to drive a graphical
+# session, so it is tied to weston: starting the compositor pulls this in, and
+# stopping the compositor takes it away again (which also releases the EVIOCGRAB
+# on the joypad, so js0 goes back to normal).
+
+[Unit]
+Description=r36max2 joypad to mouse/keyboard bridge (uinput)
+After=weston.service
+BindsTo=weston.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/r36-keymapper.py -v
+Restart=on-failure
+RestartSec=2
+# python + two uinput devices; it never needs more than this
+MemoryHigh=64M
+# the bridge must not keep a half-open keyboard behind after a crash; the
+# kernel tears uinput devices down with the process, so plain SIGTERM is enough
+KillSignal=SIGTERM
+TimeoutStopSec=5
+
+[Install]
+WantedBy=weston.service
