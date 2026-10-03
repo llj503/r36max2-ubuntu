@@ -61,6 +61,16 @@ K = {
     "HOME": 102, "END": 107, "DEL": 111, "ALT": 56, "META": 125,
 }
 
+# Synonyms for the same physical key.  'RETURN' cost an evening: the phase-B rig asked for
+# RETURN, only ENTER was in the table, r36-osk printed "injected 0/1 key presses" and the
+# harness read that as "EmulationStation ignored my keys" instead of "my key name was wrong".
+ALIAS = {
+    "RETURN": "ENTER", "KEYPADENTER": "ENTER", "CR": "ENTER",
+    "ESCAPE": "ESC", "BS": "BACKSPACE", "SPC": "SPACE",
+    "PGUP": "PAGEUP", "PGDN": "PAGEDOWN", "ARROWUP": "UP", "ARROWDOWN": "DOWN",
+    "ARROWLEFT": "LEFT", "ARROWRIGHT": "RIGHT",
+}
+
 # characters that need Shift+base key
 SHIFTED = {
     "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",
@@ -387,19 +397,26 @@ def main():
         if args.keys is not None:
             names = [n.strip().upper() for n in args.keys.split(",") if n.strip()]
             done = 0
+            bad = []
             for nm in names:
-                if nm not in K:
-                    print("  !! unknown key %r (known: %s)" % (nm, " ".join(sorted(K))),
-                          file=sys.stderr)
+                nm2 = ALIAS.get(nm, nm)
+                if nm2 not in K:
+                    bad.append(nm)
                     continue
-                kb.hold(K[nm], True)
+                kb.hold(K[nm2], True)
                 time.sleep(0.06)               # hold it a moment: some clients poll
-                kb.hold(K[nm], False)
+                kb.hold(K[nm2], False)
                 done += 1
                 if args.verbose:
-                    print("  tapped %s" % nm)
+                    print("  tapped %s%s" % (nm2, "" if nm2 == nm else " (as %s)" % nm))
                 time.sleep(0.09)
             print("  injected %d/%d key presses through /dev/uinput" % (done, len(names)))
+            if bad:
+                # Exit non-zero.  A harness that only looks at "did the command run" would
+                # otherwise record a mistyped key name as "the application ignored input".
+                print("  !! unknown key name(s): %s   (known: %s)"
+                      % (" ".join(bad), " ".join(sorted(K))), file=sys.stderr)
+                return 2
             return 0
         page, latch, caps, n = args.start, False, False, 0
         stall = pipeline_stalled()

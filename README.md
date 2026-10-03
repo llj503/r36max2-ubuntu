@@ -30,9 +30,10 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 | 按键 / 摇杆 / 电压采样 | ✅ | `retrogame_joypad`、`adc-keys`、`rk805 pwrkey` |
 | 声音（rk817 codec + 外接功放） | ✅ | 耳机与喇叭都实测有声 |
 | GPU（panfrost + Mesa + GBM + EGL） | ✅ | `Mali-G31 MC1 (Panfrost)`，GLES 3.1，见下文 |
-| Wayland 图形会话（weston 14） | ⚠️ 起得来、能合成，但会让 VOP 翻页永久卡死（只能重启） | `r36-wayland start`，见下文 |
-| 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对 | `build/r36-keymapper.py`，见下文 |
+| Wayland 图形会话（weston 14） | ⚠️ 起得来、能合成；VOP 会丢 vblank —— 有时永久卡死（只能重启），有时只是间歇 WARN 而画面仍可操作 | `r36-wayland start`，见下文 |
+| 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对；但**跑 ES 时要停桥**（抢设备） | `build/r36-keymapper.py`，见下文 |
 | 虚拟键盘（`r36-osk`：uinput + wofi 网格） | ✅ 按键流已无人值守逐事件验证；点击那一步要屏幕能用 | `r36-osk`，见下文 |
+| EmulationStation（batocera 分支，桌面 GL） | ✅ 编出 117 MB 二进制，weston 里起窗口、列表、**启动回路实测跑通**（art-book 主题上屏、按键导航正常）；摇杆导航待眼睛确认 | `build/k72-es-resume.sh` + `/usr/local/bin/r36-es`，见下文 |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
@@ -371,6 +372,96 @@ implemented by compositor; IME will be disabled`），所以"输入法风格"的
   `foot -- sh -c 'stty -icanon; cat > /tmp/osk-typed.txt'` 抓住，SSH 直接读回，
   不依赖任何人看屏幕判断（`build/k72-osk-live.sh` + `k72-osk-read.sh`）。
 
+## EmulationStation：在这台 1 GB 的板子上编出来并跑起来了
+
+apt 里没有 ES（`emulationstation`、`emulationstation-de` 都不在 26.04），官网给的是 x86 .deb。
+**ES-DE 的 aarch64 AppImage 起不了窗口**：它要桌面 GL 3.3+ 或 Vulkan，而本机 Mesa 26.0.8 只给
+`GL_VERSION=3.1 Mesa` + `GLES 3.1`（Mali-G31/Panfrost），且 `/usr/share/vulkan/icd.d/` 是空的。
+所以能走的只有 RetroPie/Batocera/ROCKNIX 这一支。最终采用
+**`batocera-linux/batocera-emulationstation`**（`-DGL=ON`，桌面 GL）；
+ROCKNIX 的 `emulationstation-next`（`-DGLES3=1`）也编到 73% 停在 `/root/esrn`，两棵树随时可续。
+
+**1 GB 内存决定了几件事**（全部是实测，不是推测）：
+
+- 用 `-j1`。`--parallel 2` 时两个 cc1plus 各 350–400 MB，SD 卡当交换盘被打爆
+  （`/proc/pressure/io` avg10 71、45 秒墙上时间只用掉 12 秒 CPU）。
+- `es-app/src/guis/GuiMenu.cpp`（batocera 5691 行 / ROCKNIX 7052 行）在 `-O3` 下 cc1plus 稳定
+  705 MB，**21 分钟编不完**；把这一个 TU 降到 `-O1 -g0` 后 **4–5 分钟编完**、PSI 归零。
+  判据是 PSI + "CPU 时间增量/墙上时间"，**不是** cmake 的 `[ N%]`。
+- ⚠️ **降优化绝对不要重跑 cmake**：Unix Makefiles 生成器让每个 `.o` 都依赖 `flags.make`，
+  一次 `cmake -S . -B build` 会把 141 个已编好的对象全判成过期（我踩过，进度从 73% 掉回 40%）。
+  正确做法是把优化级别作为 **make 命令行变量**传进去：
+  `cmake --build build --parallel 1 -- "CXX_FLAGS=<flags.make 里的原值> -O1 -g0"`
+  —— 命令行赋值优先于 flags.make，GCC 取最后一个 `-O`/`-g`，而 `CXX_DEFINES`/`CXX_INCLUDES`
+  仍由 flags.make 提供，所以不可能悄悄丢宏。真把时间戳弄脏了，`build/k72-esrn-recover.sh` 的
+  救法是：先 `diff` 证明 flags.make 内容没变（变了就不敢复用旧对象），再 `touch` 全部 `.o`/`.a`。
+- 产物**不在** `build/es-app/` 下：batocera 的 CMakeLists 把 `CMAKE_RUNTIME_OUTPUT_DIRECTORY`
+  设成仓库根 → `/root/es/emulationstation`（117 MB）。照 ROCKNIX 树的路径去找会把"链接成功"
+  当成"编译失败"（`build/k72-find-esbin.sh` 用日志里的 `Built target` + `find` 双重确认）。
+- 依赖：`apt install gettext`。CMake 只在 `msgfmt + msgmerge + xgettext + Intl` 都在时才给
+  `HAVE_INTL`；缺了它，26.04 的 libstdc++ 15 会让 `<iomanip>`→`<locale>` 拉进 `<libintl.h>`，
+  和 ES 自带的 `ngettext` 回退实现撞成 `ambiguating new declaration`。**别删 ES 的回退**
+  （这版 glibc 的 `<libintl.h>` 没有 `pgettext`，删了会变链接错误）。
+- GitHub 的 archive tarball 不含子模块：pugixml 要按 `.gitmodules` 里 pin 的 sha 单独取
+  （`build/k72-esrn-fix-pugixml.sh`）。
+
+**冒烟测试故意分两阶段**（`build/es-smoke-device.sh`，跑在板子上，由 `/root/es-watch.sh` 在
+链接完成那一刻自己触发；宿主侧 `build/k72-esrn-autorun.sh` + `build/k72-notify-wait.sh` 负责
+"跑完了再通知"）：
+
+- **batocera 的 ES 少了 `es_systems.cfg` 会直接退出**（`ERROR es_systems.cfg file does not
+  exist!` → `Error while parsing systems configuration file!`），所以"什么都不装、看它活不活"
+  这个 A 阶段设计对这支 fork 不成立；改成写一个合法但空的 `<systemList/>`，这样仍然零系统、
+  不牵扯主题。实测 **alive after 25–30s = 1**，窗口/GL/SDL wayland 全通。
+- B 阶段放一个假系统（`/root/roms/demo/mario.sh`，"启动"就是写个标记文件），从 SSH 注入两个
+  **`ENTER`**（系统视图→游戏列表→启动）：标记文件写出 `ES launched the demo at 20:28:15`，
+  ES 活着回到列表，内核 stall 计数 0→0。注意 ES 编译期默认键是方向键/Enter，所以不需要眼睛
+  也能驱动它；`r36-osk` 的键名表里**没有 `RETURN`，只有 `ENTER`**（旧版打印 `injected 0/1`
+  还返回 0，害我把自己的按键失误读成"ES 不响应"；现已加别名并且未知键名返回 2）。
+
+**主题**用 `anthonycaccese/art-book-next-es`——ROCKNIX 在
+`projects/ROCKNIX/packages/ui/themes/es-theme-art-book-next/package.mk` 里 pin 了 rev + sha256，
+本机 `build/theme-stage-local.sh` 下载后校验到同一个 `7ee1e93f…`；它自己的 README 写明是
+**Batocera ES 版**（适用 Batocera v40+/Knulli/ROCKNIX/RetroBat，基座就是
+batocera-emulationstation），所以两支 fork 通用。`build/k72-es-theme-install.sh` 有两处与
+上游做法不同，都是量出来的：安装用 **`cp -al` 硬链接**（同一文件系统，288 MB 一个字节都不重写），
+以及**默认不裁剪** artwork 变体 —— 这份主题用
+`<path>./_inc/systems/artwork-noir/_default.png</path>` 引用它们，而**不是**
+`<include name="artwork-noir">`，照抄上游那句 `sed` 只删目录不删引用，实测留下 4 个缺失文件 +
+4 处指进已删目录（`build/theme-check-local.py` 把三种做法各测一遍）。装完还会在设备上再跑一次
+引用自检。顺带一条：主题 XML 里写着裸 `&&`（`if="${a} == '1' && …"`），ES 的 tinyxml 能过、
+Python 的 `ElementTree` 不过 —— **"我的解析器报错"不等于"文件坏了"**，checker 先转义再解析。
+
+**手柄配置**：`es_input.cfg` 里必须写本机实测 GUID `19009b4d4b4800000111000000010000`
+（Batocera 数据库里同名条目 `retrogame_joypad` 的 A/B 与 X/Y 和我们设备树的顺序是**反的**，
+照抄会静默装反；js 按钮号 = `BTN_*` 码的升序排名）。读能力位图不要解析
+`/sys/.../capabilities/key`（arm64 上是 64 位字且丢前导零），用 `EVIOCGBIT`
+（`build/r36-capdump.py`）。菜单导航在这个 fork 里只认 `up/down/left/right` **或**
+`joystick1left/joystick1up`（`es-core/src/InputConfig.cpp:229-238`：
+`isMappedLike("left") = isMappedTo("left") || isMappedTo("joystick1left")`，反向由同一绑定取负
+得到）；从 Batocera 模板抄来的 `leftanalog*` 在全代码库**零消费者**，等于白写。所以
+`build/k72-es-sticknav.sh add` 补了两条轴绑定（`value=-1`，`id=0/1`）**并保留十字键**；
+方向反了就 `... sticknav.sh flip`，回滚是 `undo`（原文件备份成 `es_input.cfg.pre-sticknav`）。
+
+## 摇杆键鼠桥和 ES 抢同一个设备（重要）
+
+`r36-keymapper` 用 `EVIOCGRAB` 独占摇杆。**桥在跑的时候 SDL 仍然"枚举"得到
+`retrogame_joypad`（17 键 4 轴、GUID 正确），但读不到任何事件** —— ES 里手柄就像坏了，
+只有桥转发出来的键盘/鼠标回声能用，而 A/B 被转成**鼠标点击**，ES 根本不绑鼠标，所以按 A 没反应。
+`/usr/local/bin/r36-es` 的处理：**启动 ES 前 `systemctl stop r36-keymapper`，ES 退出（或
+`r36-es --stop`）后自动 start 回来**（`watch_bridge` 后台守卫）。附带三条实测：
+
+- `pgrep -x emulationstation` / `pkill -x emulationstation` **永远匹配不到**：`comm` 只有
+  15 字符（`emulationstatio`），16 字符的 `-x` 恒为 0 —— 我用它写出一版"--stop 杀不掉 ES、
+  还误报 ES 没在跑"的启动器。改用 `pgrep -c emulationstatio` 或按 argv[0] 匹配。
+- `pgrep -f "$ES"` 会匹配到**自己的辅助进程**（旧版 watch_bridge 的 argv 里含
+  `ESBIN='/root/es/emulationstation'`），于是"alive=2"是假的，守卫也永远等不到 ES 退出。
+- 桥不处理 SIGTERM，每次 stop 都要等 systemd 超时再 SIGKILL，unit 从此显示 `failed`
+  —— 那**是"停成功了"**，不是起不来；顺手把 `r36-keymapper.py` 加个信号处理是待办。
+- 抓包侧同理：桥抢占设备时 `evtest` 打在摇杆节点上只有 capability 头、**0 个事件**，别当成
+  "摇杆没信号"；要看原始 `BTN_*` 必须先停桥（`build/k72-evcap.sh` 现在同时抓 4 个节点，
+  uinput 那两个按设备名解析）。
+
 ## 换网络 / 交给别人用（这块板子没有键盘也没有串口）
 
 镜像里可以完全不带任何凭据：`R36_BAKE_WIFI=0 bash build/build-rootfs.sh`。
@@ -476,8 +567,28 @@ WiFi、摇杆 17 键 + 4 轴 + 震动全部实测）。**v20 起默认内核就�
   （装了 udev 之后 logind 会开始抓 KEY_POWER，默认是 poweroff，实测短按就关机）。
   **测睡眠前一定先设 RTC 闹钟**，否则就是把设备关进小黑屋。
 - 蓝牙 `hci0: command 0x204b tx timeout`：AIC 的 BT 固件没配好，必要时 blacklist `btusb`。
-- 按键目前只有 input 事件，没有用户空间映射（掌机按键不能当键盘用：joystick 事件不会被
-  内核 kbd handler 绑定，所以没法用按键登录）。
+- ~~按键目前只有 input 事件，没有用户空间映射~~ **已解决**：`r36-keymapper`（uinput 键鼠桥）
+  已进 v20，掌机按键可以当键盘/鼠标用；但注意它和 EmulationStation 抢同一个设备，
+  见上面"摇杆键鼠桥和 ES 抢同一个设备"。
+- **EmulationStation 这一整套目前只存在于那张 64 GB 卡 + `build/` 脚本里，没进镜像**：
+  包括 `/root/es` 编译产物、`es_input.cfg`（含新加的 `joystick1left/up` 轴绑定）、
+  `~/.emulationstation/themes/art-book-next`、`es_settings.cfg` 的 `ThemeSet`、
+  `/usr/local/bin/r36-es` 和 `r36-osk` 的键名别名修正。要交给别人用得再出一版镜像（v21），
+  把上面这些折进 `build/apply-*.sh` 的流程 —— **别只改卡上，重刷就丢**。
+- **ES 还没有真 ROM**：现在跑的 `demo` 系统是假的（"启动"= 写一个标记文件），用来验证
+  列表→启动→回列表的回路。真 ROM 在另一张 128 GB 卡上，而那张卡是**绝对不碰**的
+  （上面有能用的 ArkOS + ROMS），所以要么由他把 ROM 拷到 64 GB 卡的根分区（还有 ~51 GB 空闲），
+  要么另想办法；这一步需要他参与决定拷哪些。
+- **左摇杆导航还没被眼睛确认**：`joystick1left/up` 绑定是照 `InputConfig.cpp` 的判定写进去的，
+  原始轴事件也确认过满行程（`ABS_X/Y/RX/RY` ±1800），但"推摇杆光标到底动没动、方向对不对"
+  只有看屏幕才知道 —— 反了就用 `build/k72-es-sticknav.sh flip`。
+- **weston 的 vblank 丢失又出现了，但形态不同**：2026-10-03 20:49:17 起再次打出
+  `[CRTC:39:crtc-0] vblank wait timed out`（`WARNING drivers/gpu/drm/drm_atomic_helper.c:1921`），
+  到 21:31 还在间歇增加；**但这一轮 weston 侧 0 条 `Device or resource busy`、画面全程可以操作**。
+  前两次是"每帧 EBUSY、只能重启"，所以"丢 vblank 一定立刻永久卡死 CRTC"要降级成
+  "至少存在一种可继续的形态"，这条线（任务 #19）还没查到底。
+- `r36-keymapper` 不处理 SIGTERM：每次 `systemctl stop` 都要等超时被 SIGKILL，unit 显示
+  `failed`（其实是停成功了），并且白等几秒。
 - **摇杆还差的两件小事**：轴方向只验证了"满行程能打到 ±1800"，没逐方向核对
   `invert-absx/absry` 这几个厂商调过的标志，也没验证单 ADC 电压梯的**组合键**
   （比如同时按两个键产生的中间电压档）；6.12.79 那条线目前跑的还是镜像里自带的整数

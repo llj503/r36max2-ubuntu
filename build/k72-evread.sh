@@ -6,18 +6,21 @@
 set -uo pipefail
 PW=ubuntu
 DEV=${DEV:-192.168.31.209}
-sshpass -p $PW ssh -o ConnectTimeout=25 root@$DEV 'for f in /tmp/evjoy.txt /tmp/evadc.txt; do
+sshpass -p $PW ssh -o ConnectTimeout=25 root@$DEV 'for f in /tmp/evjoy.txt /tmp/evadc.txt /tmp/evkbd.txt /tmp/evmouse.txt; do
   echo "=== $f: $(wc -l < $f 2>/dev/null || echo missing) lines, $(grep -c "^Event:" $f 2>/dev/null || echo 0) events ==="
 done
 python3 - <<PY
 import re
-EV="/tmp/evjoy.txt"; ADC="/tmp/evadc.txt"
+EV="/tmp/evjoy.txt"; ADC="/tmp/evadc.txt"; KBD="/tmp/evkbd.txt"; MOU="/tmp/evmouse.txt"
 EXPECT=["BTN_DPAD_UP","BTN_DPAD_DOWN","BTN_DPAD_LEFT","BTN_DPAD_RIGHT","BTN_SOUTH","BTN_EAST",
         "BTN_WEST","BTN_NORTH","BTN_SELECT","BTN_START","BTN_MODE","BTN_THUMBL","BTN_THUMBR",
         "BTN_TL","BTN_TR","BTN_TL2","BTN_TR2"]
 def scan(path):
     try: txt=open(path,errors="replace").read()
-    except OSError: return {},""
+    except OSError: return {}, {}, []      # a missing capture file must not crash the reader
+                                           # (the uinput nodes are gone whenever the bridge is
+                                           # stopped, and this used to raise ValueError: not
+                                           # enough values to unpack (expected 3, got 2))
     keys={}; axes={}; other=[]
     for m in re.finditer(r"type (\d+) \((EV_\w+)\), code (\d+) \(([A-Z_0-9+-]+)\),? +value (-?\d+)", txt):
         t,name,code,val=m.group(2),m.group(4),m.group(3),int(m.group(5))
@@ -29,7 +32,9 @@ def scan(path):
         elif t!="EV_SYN":
             other.append((name,code,val))
     return (keys,axes,other)
-for label,path in (("joystick (retrogame_joypad)",EV),("adc-keys",ADC)):
+for label,path in (("joystick (retrogame_joypad)",EV),("adc-keys",ADC),
+                   ("KEYBOARD made by r36-keymapper - what the desktop/ES actually sees",KBD),
+                   ("MOUSE made by r36-keymapper",MOU)):
     keys,axes,other=scan(path)
     print("--- %s ---" % label)
     print("  EV_KEY  seen=%d" % len(keys))
