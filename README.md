@@ -253,10 +253,17 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   客户端退出拆面的时候出现第一条 `WARNING drivers/gpu/drm/drm_atomic_helper.c:1921 ... wait_for_vblanks`，
   之后 `rockchip-drm: vblank wait timed out on crtc 0` / `flip_done timed out` /
   `[CRTC:39:crtc-0] commit wait timed out` 每 10–40 秒循环，面板冻在最后一帧（看起来是"白屏带四角暗块"）。
-  **停 weston、`chvt 1`、写 `fb0/blank=0` 都救不回来**，vsync 中断已经不再来了。下次尝试顺序：
-  `[core] pageflip-timeout=500` → 一次只开一个客户端并盯 `journalctl -k` → 切 `boot-612.ini` 做 A/B
-  （6.12 上我们自己的 GBM 直出翻页能跑到 29.8 fps，所以能区分是 weston 的翻页方式还是 7.2 的
-  rockchip-drm 回归）。两个恢复陷阱：`weston.service` 的 `ExecStopPost=chvt 1` 在装 `kbd` 之前
+  **停 weston、`chvt 1`、写 `fb0/blank=0` 都救不回来**，vsync 中断已经不再来了。
+  **加上 `[core] pageflip-timeout=500` 后的复测**（`build/k72-flip-churn.sh`：8 轮 × 12 秒、每轮把
+  EGL 客户端 SIGKILL 掉复现"拆面"；`build/k72-flip-soak.sh`：12 分钟、每分钟起停一次客户端）：
+  内核四个 flip/vblank 计数**全程 0 增量**，weston 一直活着，stop 之后控制台自动回来。为了不让
+  "客户端根本没挂上"冒充成功，脚本先用 weston 的累计 CPU 时间证明真在合成——空闲 15 秒 ΔCPU=0 秒，
+  带 `weston-simple-egl` 15 秒 ΔCPU=2 秒，浸泡期间每分钟稳定 +2.5~3 秒。
+  **这还不算结论**：那次是连续跑约 23 分钟才发作，12 分钟没覆盖到；而且有个更值得怀疑的触发条件没排除——
+  卡死之前我曾**在翻页正飞的时候硬杀过上一个 weston**（日志原话：`destroying output DSI-1 (id 0) with a
+  pending flip, but as we are shutting down we can't wait to destroy it when the flip completes`），
+  所以"23 分钟"可能只是延迟，真正弄丢 vsync 中断的是那次中途硬杀。下一步就专门复现这一条。
+  两个恢复陷阱：`weston.service` 的 `ExecStopPost=chvt 1` 在装 `kbd` 之前
   是**静默失败**的（这镜像原本没有 chvt/fgconsole，所以"active vt"一直打印空）；刚开机
   `fb0 blank` 读数是 4（DPMS 关闭），往 tty1 写一次东西才亮——**没键盘的机器上"屏黑"和"死机"
   长得一模一样，别急着长按电源**。
