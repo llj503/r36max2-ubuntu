@@ -1,0 +1,83 @@
+#!/bin/sh
+# r36-wayland - drive the Weston session on the r36max2 from SSH.
+#
+# The handheld has no keyboard, no usable USB host and Bluetooth is still
+# broken, so every GUI action has to come from the network.  This wrapper is the
+# one place that knows the socket name and the runtime dir, so an app is one
+# command away:  r36-wayland run foot
+#
+# Nothing here needs the panel to be attached - the clients render into the
+# compositor whether or not anybody can see them, which is also how you smoke
+# test the stack after a kernel bump.
+
+RT=/run/wayland
+SOCK=wayland-0
+WENV="XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$SOCK"
+
+running() { [ -S "$RT/$SOCK" ]; }
+
+ensure_up() {
+    running && return 0
+    echo "  starting weston..."
+    systemctl start weston
+    i=0
+    while [ $i -lt 20 ]; do
+        running && return 0
+        sleep 0.5
+        i=$((i + 1))
+    done
+    echo "  !! weston socket $RT/$SOCK never appeared; journalctl -u weston:"
+    journalctl -u weston --no-pager -n 20
+    return 1
+}
+
+status() {
+    echo "  service : $(systemctl is-active weston 2>/dev/null)"
+    echo "  socket  : $(ls -l $RT/$SOCK 2>/dev/null | sed 's/.* //;s/^/  /' || echo absent)"
+    echo "  procs   : $(pgrep -c weston) weston, $(pgrep -c -f 'foot|weston-simple|weston-term' 2>/dev/null || echo 0) clients"
+    echo "  drm     : $(ls /dev/dri 2>/dev/null | tr '\n' ' ')"
+    echo "  mem     : $(sed -n 2p /proc/meminfo)"
+    echo "  panel   : $(cat /sys/class/drm/card0-DSI-1/status 2>/dev/null) $(cat /sys/class/drm/card0-DSI-1/modes 2>/dev/null | head -1)"
+}
+
+launch() {
+    ensure_up || return 1
+    shift_from="$1"; shift
+    env $WENV setsid "$@" >/tmp/r36-wayland-client.log 2>&1 &
+    echo "  launched: $* (log /tmp/r36-wayland-client.log)"
+}
+
+case "${1:-status}" in
+    start)   ensure_up; status ;;
+    stop)    systemctl stop weston; echo "  weston stopped, console back on tty1" ;;
+    restart) systemctl restart weston; sleep 2; status ;;
+    status)  status ;;
+    run)     shift; launch run "$@" ;;
+    egl)     launch egl weston-simple-egl ;;
+    term)    launch term foot ;;
+    smoke)
+        # render something for N seconds in the background - used by the
+        # acceptance test so a screenshot or a photo has actual content in it
+        T=${2:-6}
+        ensure_up || exit 1
+        env $WENV timeout $T weston-simple-egl >/tmp/r36-egl.log 2>&1 &
+        env $WENV timeout $T weston-flower >/tmp/r36-flower.log 2>&1 &
+        echo "  rendering for ${T}s (egl + flower)"
+        ;;
+    shot)
+        shift
+        python3 /usr/local/bin/r36-shot.py "${1:-/tmp/r36-shot.png}"
+        ;;
+    apps)
+        echo "  installed Wayland clients:"
+        ls /usr/bin | grep -E "^weston-|^(foot|wofi|weston-terminal)$" | sed 's/^/     /' | head -30
+        ;;
+    env)
+        echo "  export XDG_RUNTIME_DIR=$RT"
+        echo "  export WAYLAND_DISPLAY=$SOCK"
+        ;;
+    *)
+        sed -n '1,20p' "$0"
+        echo "usage: r36-wayland {start|stop|restart|status|run <app>|egl|term|smoke [s]|shot [file]|apps|env}"
+        ;;
+esac

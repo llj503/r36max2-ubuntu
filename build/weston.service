@@ -1,0 +1,34 @@
+# /etc/systemd/system/weston.service
+#
+# Opt-in: `systemctl start weston` (or `r36-wayland start`).  It is NOT enabled
+# at boot because taking DRM master blanks the tty1 status page, and on a 1 GB
+# handheld you may not want a compositor resident.
+#
+# Deliberately no DeviceAllow=/DevicePolicy=: systemd's default device cgroup for
+# a root service already allows /dev/dri, /dev/input and /dev/tty, and listing
+# any DeviceAllow entry flips the policy to strict, which is a reliable way to
+# make weston fail to acquire the GPU with a confusing error.
+
+[Unit]
+Description=Weston (Wayland compositor) on the r36max2 panel
+After=multi-user.target sound.target
+Conflicts=getty@tty1.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/wayland
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=HOME=/root
+Environment=XCURSOR_PATH=/usr/share/icons
+ExecStartPre=/bin/sh -c 'mkdir -m 0700 -p /run/wayland'
+ExecStart=/usr/bin/weston -B drm -S wayland-0
+# weston leaves the VT on its way out; put the console back so the status page
+# and the login prompt are visible again
+ExecStopPost=/bin/sh -c 'chvt 1 2>/dev/null; rm -f /run/wayland/wayland-0*'
+Restart=no
+# throttle instead of OOM-killing: a killed compositor means a black panel
+MemoryHigh=320M
+
+[Install]
+WantedBy=multi-user.target

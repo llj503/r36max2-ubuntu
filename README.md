@@ -27,6 +27,7 @@ rootfs 打包脚本、无串口时的调试通道、GPU 上层验证。
 | 按键 / 摇杆 / 电压采样 | ✅ | `retrogame_joypad`、`adc-keys`、`rk805 pwrkey` |
 | 声音（rk817 codec + 外接功放） | ✅ | 耳机与喇叭都实测有声 |
 | GPU（panfrost + Mesa + GBM + EGL） | ✅ | `Mali-G31 MC1 (Panfrost)`，GLES 3.1，见下文 |
+| Wayland 图形会话（weston 14） | ✅（截图权限除外） | `r36-wayland start` 后 foot/GL 客户端/wofi 同开，见下文 |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
@@ -172,6 +173,51 @@ r36-glcheck probe    # 枚举 EGL config 并逐个试 window surface
 950 mV，而 `vdd_logic` 已被别的消费者顶在 975 mV，regulator 核心遇到 min>max 直接 EINVAL，
 死在 `panfrost_devfreq_init`。修法就是板级 dts 自带一张 OPP 表（见 `board/rk3326-xifan-r36max2.dts`
 里的 `r36_gpu_opp`）。顺带：DTC 1.7.2 不接受在所有 `/ { }` 之外写带标签的裸节点。
+
+## Wayland（weston）：让屏幕显示图形界面
+
+选型是 **weston 14.0.2**（Ubuntu 26.04 里的参考实现），`--backend=drm` 直接从
+GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：weston 常驻 53 MB（peak
+58.8 MB，单元上挂 `MemoryHigh=320M` 只限速不 OOM），同时开着 `foot` +
+`weston-simple-egl` + `weston-flower` + `wofi` 之后仍有 ~580 MB available。
+
+- 安装：`apt install weston wayland-protocols libwayland-dev grim wf-recorder foot wofi
+  cmake pkg-config`。Ubuntu **没有 `weston-examples`** 这个包，示例客户端
+  （`weston-simple-egl`、`weston-flower`、`weston-screenshooter`）都在 `weston` 包里；
+  而 apt 只要遇到一个不存在的包名就**整条命令什么都不装**（`E: Unable to locate package`
+  后面紧跟着一句看起来像成功的 `apt exit=0`），所以 `build/k72-wayland-install.sh`
+  先用 `apt-cache policy` 过滤再安装。
+- 落地的文件（都在仓库里，装完设备与将来出镜像用同一批）：
+  `build/weston.ini` → `/etc/xdg/weston/weston.ini`；
+  `build/weston.service` → systemd 单元，**默认 disabled**，因为合成器一拿 DRM master
+  就会把 tty1 的状态页顶掉；
+  `build/r36-wayland` → `/usr/local/bin/r36-wayland`（`start|stop|status|run <app>|egl|
+  term|smoke [秒]|shot|apps|env`）；`build/zz-r36-wayland.sh` → `/etc/profile.d/`，只在
+  socket 存在时导出 `XDG_RUNTIME_DIR=/run/wayland WAYLAND_DISPLAY=wayland-0`。
+- 用法：`r36-wayland start` → `r36-wayland run foot`（或 `r36-wayland smoke 30` 摆两个
+  GL 客户端）。从 SSH 起的程序直接显示在屏幕上，这就是这台没键盘的机器的日常姿势。
+- 三个实测坑：
+  1. **weston 14 已经没有 `--tty=` 选项**。`fatal: unhandled option: --tty=/dev/tty2`
+     发生在 backend 已经初始化、DSI-1 已经 modeset、EGL config 都选好之后，所以日志看着
+     像成功，进程却立刻退出。VT 由 session/libseat 决定；以 root 跑 systemd 服务直接就能
+     拿到 DRM master（配 `Conflicts=getty@tty1.service` + `ExecStopPost=chvt 1` 让控制台回来）。
+  2. **截图被合成器的权限模型挡住**：`weston-screenshooter` 回
+     `Output capture error: unauthorized`，`grim`/`wf-recorder` 需要
+     `wlr-screencopy-unstable-v1`（weston 不实现）。libweston 里
+     `weston_compositor_add_screenshot_authority` 只把捕获权交给"由用户按键触发的那次请求"，
+     ini 没有开关；`build/r36-shot.py`、`build/r36-shot2.py` 试过直接请求、先挂请求再注入
+     6 种组合键、全盘找新文件，都没能拿到 PNG。**所以图形验收目前仍然靠眼睛/拍照。**
+  3. **意外收获：`/dev/uinput` 虚拟键盘这条路是通的**（uinput 内核内建，不需要模块）。
+     `r36-shot.py` 造出键盘后 weston 立刻记录
+     `event4 - r36-shot-virtual-keyboard: is tagged by udev as: Keyboard` 并把它关联到
+     DSI-1 —— 这正是以后做"摇杆→键盘/鼠标"桥的现成地基。结构体大小有讲究：
+     `struct uinput_user_dev` 的 abs 数组是 `__s32`，`ff_effects_max` 后面**没有填充**，
+     总共 80+8+4+4×64×4 = **1116 字节**，写 1120 直接 `EINVAL`。
+     注入按键时还顺手撞开了 weston 的 flight recorder（`Ctrl+Alt+P` 起 / 再按停，
+     30 秒写出 `/capture.wcap` 10 MB、524 帧，magic `PACWXR24`），那是合成器侧调试的现成数据源。
+- 刻意设置的：`locking=false` + `idle-time=0` —— 这台机器睡眠进得去出不来，一个锁掉的
+  屏等于把设备关小黑屋；`gbm-format=xrgb8888` 与之前 GBM/EGL 验证选到的格式一致；
+  光标缺 `dnd-*` 只影响拖拽图标，无功能性问题。
 
 ## 换网络 / 交给别人用（这块板子没有键盘也没有串口）
 
