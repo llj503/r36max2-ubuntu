@@ -13,10 +13,15 @@ if [ ! -f "$CRED" ]; then
   echo "  !! $CRED missing - cannot verify, refusing to claim clean"
   exit 1
 fi
-# read the two values without printing them
-SSID=$(awk -F= 'tolower($1) ~ /ssid/ {gsub(/^[ \t]+|[ \t\r]+$/,"",$2); print $2; exit}' "$CRED")
+# read the two values without printing them.  Our credential file spells them
+# "Name=" and "Passphrase=" (not SSID=/PSK=, which is the wifi.txt spelling) -
+# an empty pattern with grep -F matches every file, so a wrong key name here would
+# have "found" the SSID everywhere instead of nowhere.  v20-hostkeys.py is the
+# authoritative sweep; this script only removes the baked wpa configs.
+SSID=$(awk -F= 'tolower($1) ~ /ssid|name/ {gsub(/^[ \t]+|[ \t\r]+$/,"",$2); print $2; exit}' "$CRED")
 PSK=$(awk -F= 'tolower($1) ~ /psk|passphrase|key/ {gsub(/^[ \t]+|[ \t\r]+$/,"",$2); print $2; exit}' "$CRED")
 echo "  credential lengths: ssid=${#SSID} psk=${#PSK}   (values not shown)"
+[ -n "$SSID" ] || echo "  !! SSID not read - the [3] sweep below would be meaningless"
 
 echo "=== [1] files that hold them ==="
 for f in "$R/etc/wpa_supplicant/wpa_supplicant-nl80211-wlan0.conf" \
