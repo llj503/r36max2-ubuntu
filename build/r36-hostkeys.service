@@ -1,0 +1,21 @@
+# /etc/systemd/system/r36-hostkeys.service
+#
+# The image is built once, so any SSH host key it contains would be identical on
+# every card flashed from it - and published, since the image is shared.  Ship no
+# keys at all and mint them on the first boot instead (ssh-keygen -A is a no-op
+# for anything that already exists, and ConditionPathExists keeps this out of the
+# way on every later boot).  ssh.service carries a drop-in that Requires= this
+# unit, because sshd will not start with no host keys.
+
+[Unit]
+Description=Generate fresh SSH host keys on first boot
+ConditionPathExists=!/etc/ssh/ssh_host_rsa_key
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/ssh-keygen -A
+ExecStart=/bin/systemctl try-restart ssh.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,13 +1,16 @@
 # R36 Max 2 (RK3326) 上的 Ubuntu 26.04 —— 主线内核移植记录
 
 一块 2023 年的 RK3326 掌机（稀范 R36 Max 2，1 GB RAM / 64 GB TF / 1024x768 DSI 屏 /
-AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线 6.12 内核 + 官方
-Ubuntu 26.04 base 从零做一套通用 Linux 开发环境**的全过程：板级设备树、引导链、
-rootfs 打包脚本、无串口时的调试通道、GPU 上层验证。
+AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核（v20 起默认 7.2.8，
+6.12.79 同卡保留）+ 官方 Ubuntu 26.04 base 从零做一套通用 Linux 开发环境**的全过程：
+板级设备树、引导链、rootfs 打包脚本、无串口时的调试通道、GPU 上层验证、Wayland 与
+摇杆输入。
 
-> English (TL;DR): mainline Linux 6.12.79 + Ubuntu 26.04 on an RK3326 handheld that
-> ships EmuELEC. This repo holds the board DTS, the image build/pack scripts, the
-> rootfs config, and a head-less EGL/GLES2 demo that proves the panfrost stack.
+> English (TL;DR): mainline Linux (7.2.8 by default since image v20, 6.12.79 kept on the
+> same card as a one-rename fallback) + Ubuntu 26.04 on an RK3326 handheld that ships
+> EmuELEC. This repo holds the board DTS, the image build/pack scripts, the rootfs
+> config, a head-less EGL/GLES2 demo that proves the panfrost stack, a Weston session
+> and a uinput joypad-to-mouse/keyboard bridge.
 > Boot chain is unchanged (vendor u-boot reads `boot.ini` from the FAT partition),
 > the eMMC is never touched, and pulling the card restores the stock system.
 
@@ -91,11 +94,39 @@ V=v19 bash build/pack-v10.sh
 从一张能启动的 ArkOS/EmuELEC 卡上 dd 出来即可（偏移 32 KiB / 8 MiB / 12 MiB）；
 因为版权原因本仓库不分发它们，也不分发 EmuELEC 的 dtb。
 
+### 出 v20（双内核 + Wayland + 摇杆键鼠桥）的实际顺序
+
+v20 不是"再跑一遍老脚本"，它把 7.2.8、gpiod 摇杆、WiFi 兼容补丁和图形栈一起收进来，
+所以顺序和检查点都记在 `build/v20-*.sh` 里，按编号执行：
+
+```bash
+bash build/v20-stage72.sh      # 7.2.8 的 Image / 三份 dtb 落到 out/boot，核对 dtb 里的 gpio 极性标志
+bash build/v20-aic72b.sh       # 干净的 AIC 源码副本 + 7.2.8 兼容补丁 -> 对 7.2.8 重编 -> 与卡上正在用的 .ko 比 sha
+bash build/v20-rootfs.sh       # 两个内核的模块树进 rootfs，逐个 modinfo 断言 vermagic，chroot 里 depmod + modprobe -n
+bash build/apply-v19.sh        # 把真机验证过的改动回写（幂等，可重复跑）
+bash build/v20-clean-wpa.sh    # 删掉被 mask 单元的残留 wants 软链（masked+enabled 会在开机报错）
+python3 build/v20-hostkeys.py  # 扫凭据 + 把镜像里的 SSH 主机密钥换成首次开机现生成
+bash build/apply-wayland.sh    # weston/foot/wofi/grim/wf-recorder/kbd + weston.ini/service + 键鼠桥（不 enable）
+bash build/v20-tidy.sh         # apt cache / lists / 大日志清掉，量一下要塞进 2 GiB 分区的内容
+V=v20 bash build/pack-v20.sh   # 打包，并在压缩前自检（见下）
+```
+
+`pack-v20.sh` 的自检不是装饰：它挂载镜像后逐项核对**两个内核各自的 .ko 数量、
+extra 模块的 vermagic 与内核版本一致**（放错内核的模块不会报错，只会让 WiFi 和按键
+神秘消失）、dtb 里 `amux-a/amux-en/rumble` 的极性标志、weston **存在但没有被 enable**、
+镜像里 **0 个 SSH 主机密钥** 且首次开机生成单元到位、`machine-id` 为空、没有任何
+wpa 凭据文件、`build`/`source` 软链接已删除；任何一项不过就**不压缩**、直接退出。
+
+两处与"给别人用"相关的安全改动，v20 起才成立：**镜像不带 WiFi 凭据**（靠
+`BOOT:\wifi.txt` 配网，见下一节），**镜像不带 SSH 主机密钥**（`r36-hostkeys.service`
+在首次开机 `ssh-keygen -A`，`ssh.service` 加 drop-in 依赖它，否则 sshd 起不来）。
+默认账号密码仍是 `ubuntu`/`ubuntu`，README 与 `r36-switches.txt` 都写了刷机后第一件事是 `passwd`。
+
 ## 刷写与首启
 
 ```bash
 # 只刷 64 GB 那张卡；插回电脑后先确认设备号，别写错盘
-xzcat out/r36max2-ubuntu-v19.img.xz | sudo dd of=/dev/sdX bs=8M status=progress oflag=sync
+xzcat out/r36max2-ubuntu-v20.img.xz | sudo dd of=/dev/sdX bs=8M status=progress oflag=sync
 ```
 
 开机约 40 秒后 tty1 会出现状态页（IP、信号、失败单元、电量）。想关掉就在 BOOT 分区建空文件
@@ -296,8 +327,11 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 
 ## 内核版本：6.12.79（镜像默认）与 7.2.8（已移植）
 
-主线 7.2.8（2026-09-25 发布）在这块板子上**已经跑通并真机验证**，但镜像默认仍是
-6.12.79 —— 因为移植过程中攒下的经验是"能上网的驱动比新内核值钱"。两者的差异：
+主线 7.2.8（2026-09-25 发布）在这块板子上**已经跑通并真机验证**（显示、音频、GPU、
+WiFi、摇杆 17 键 + 4 轴 + 震动全部实测）。**v20 起默认内核就是 7.2.8**，6.12.79 仍然
+完整装在同一张卡上：BOOT 分区里 `boot.ini` 是 `boot-72.ini` 的副本，想退回就把
+`boot-612.ini` 覆盖成 `boot.ini`，不用重刷。唯一还需要小心的是 weston —— 见上面
+"Wayland"一节里那条 ⚠️，它只在开合成器时才会发作，所以图形栈装了但默认不启动。
 
 | | 6.12.79 | 7.2.8 |
 | --- | --- | --- |

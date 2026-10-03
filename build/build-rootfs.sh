@@ -68,16 +68,53 @@ for b in sshd wpa_supplicant ip apt-get depmod; do
 done
 
 echo "=== kernel modules ==="
+# Which .ko belongs to which kernel cannot be answered by a filename or an mtime:
+# the joypad source tree and the AIC tree have each been built against both 6.12
+# and 7.2 in this project, and a module built for the wrong kernel boots into
+# "no WiFi / no buttons" with nothing but one line in dmesg.  So: pick the source
+# by kernel, then assert vermagic before it is allowed into the image.
+#   6.12.79 -> legacy integer-GPIO joypad driver (hardware-verified since v11)
+#   7.2.8   -> the gpiod conversion in artifacts/joypad (needs the polarity flags
+#              in board/rk3326-xifan-r36max2.dts; see build/joypad-gpiod.patch)
 mkdir -p "$ROOT/lib/modules"
 rm -rf "$ROOT/lib/modules/$KVER"
 cp -a "$OUT/lib/modules/$KVER" "$ROOT/lib/modules/"
+# modules_install leaves build/source symlinks into the multi-GB kernel tree;
+# shipping them means a dangling symlink on every card (and anything copying with
+# -r follows them and dumps the source tree into the image)
+rm -f "$ROOT/lib/modules/$KVER/build" "$ROOT/lib/modules/$KVER/source"
 mkdir -p "$ROOT/lib/modules/$KVER/extra"
 cp -v "$KDIR/modules.order" "$KDIR/modules.builtin" "$KDIR/modules.builtin.modinfo" "$ROOT/lib/modules/$KVER/" 2>/dev/null
-cp -v /root/r36/joypad/src/rocknix-singleadc-joypad.ko /root/r36/joypad/src/rocknix-joypad.ko "$ROOT/lib/modules/$KVER/extra/"
+
+case "$KVER" in
+  6.12.79) JPDIR=/root/r36/joypad/src;              JPSFX="" ;;
+  *)       JPDIR=/mnt/e/ubuntu/artifacts/joypad;    JPSFX="-$KVER" ;;
+esac
+for m in rocknix-singleadc-joypad rocknix-joypad; do
+  src="$JPDIR/$m$JPSFX.ko"
+  [ -e "$src" ] || { echo "!! missing $src"; exit 1; }
+  v=$(modinfo -F vermagic "$src" | awk '{print $1}')
+  [ "$v" = "$KVER" ] || { echo "!! $src is vermagic $v, not $KVER"; exit 1; }
+  cp -v "$src" "$ROOT/lib/modules/$KVER/extra/$m.ko"
+done
 cp -v "$KDIR/net/wireless/cfg80211.ko" "$ROOT/lib/modules/$KVER/kernel/net/wireless/" 2>/dev/null
-find /root/r36/wifi/aic8800dc-linux-patched-main -name "aic_load_fw.ko" -o -name "aic8800_fdrv.ko" | xargs -r cp -v -t "$ROOT/lib/modules/$KVER/extra/"
+# the radxa-pkg AIC tree, rebuilt for THIS kernel (7.2 needs
+# build/aic8800-7.2.8-compat.patch applied with: patch -p1 -d drivers -i ...)
+AICDIR=${AIC_STAGED:-/mnt/e/ubuntu/artifacts/aic72}
+for m in aic8800_fdrv aic_load_fw; do
+  src=""
+  for cand in "$AICDIR/$m-$KVER.ko" "$KDIR/../$m.ko"; do
+    [ -e "$cand" ] && src="$cand" && break
+  done
+  [ -n "$src" ] || { echo "!! no $m.ko staged for $KVER (build it first: v20-aic72b.sh)"; exit 1; }
+  v=$(modinfo -F vermagic "$src" | awk '{print $1}')
+  [ "$v" = "$KVER" ] || { echo "!! $src is vermagic $v, not $KVER"; exit 1; }
+  cp -v "$src" "$ROOT/lib/modules/$KVER/extra/$m.ko"
+done
 chroot "$ROOT" /usr/bin/env depmod -a "$KVER" && echo "depmod ok"
-chroot "$ROOT" /bin/sh -c "modinfo -F vermagic /lib/modules/$KVER/extra/rocknix-singleadc-joypad.ko; modinfo -F depends /lib/modules/$KVER/extra/aic8800_fdrv.ko"
+for m in rocknix_singleadc_joypad aic8800_fdrv; do
+  echo "  modprobe -n $m: $(chroot "$ROOT" /usr/bin/env modprobe -n -S "$KVER" "$m" 2>&1 || echo OK)"
+done
 
 echo "=== firmware ==="
 mkdir -p "$ROOT/lib/firmware"
