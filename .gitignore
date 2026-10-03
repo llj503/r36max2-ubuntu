@@ -58,3 +58,7 @@ desktop.ini
 # 保留：README 引用的两张验收图
 !shots/gl-frame.png
 !001.jpg
+
+# python bytecode from the helper scripts
+__pycache__/
+*.pyc

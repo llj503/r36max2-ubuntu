@@ -211,9 +211,9 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 | 构建 | `K=/root/r36/linux-6.12.79 bash build/build-all.sh` | `K=/root/r36/linux-7.2.8 bash build/build-all.sh`（16 核 505 秒） |
 | 补丁层 | 全部干净应用 | 11/24 干净；13 个 panfrost 冲突**直接丢掉**（上游已实现 `SET_LABEL_BO`、`SYSTEM_TIMESTAMP`） |
 | 显示 / 音频 / GPU / WiFi | ✅ | ✅（WiFi 需下面的兼容补丁） |
-| 摇杆 joypad | ✅ | ❌ 未移植（7.x 删了整数 GPIO API） |
+| 摇杆 joypad | ✅ | ✅（需下面的 gpiod 改写 + 配套 dtb 极性） |
 
-7.2.8 需要三件事，都在这里：
+7.2.8 需要四件事，都在这里：
 
 1. **`build/k72-prepare.sh`** —— 打补丁 + 把 Rocknix 的 `panel-generic-dsi.c` 搬进
    `drivers/gpu/drm/panel/`（主线没有 `rocknix,generic-dsi`），并把它挂进 Kconfig。
@@ -232,6 +232,34 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
    **`strncpy()` 已从内核移除** → `strscpy()`、`ieee80211_mgmt` 的 action 内层 union
    变匿名且 `action_code` 上提。打完 `make -C drivers/aic8800 KDIR=<tree> modules`
    零 error，产物与真机验证过的那份**逐字节相同**。
+4. **`build/joypad-gpiod.patch`**（473 行，24 个 hunk，两个文件）—— 把
+   `rocknix-singleadc-joypad.c` / `rocknix-joypad.c` 从整数 GPIO API 改写成 gpiod
+   消费者 API，同一份源码在 6.12 与 7.x 都能编。改写本身不难，难的是它牵出两个
+   **完全静默**的坑，值得单独写清楚：
+   - **`gpiod_set_value()` 会按设备树极性取反，`gpio_set_value()` 不会。** 逐行改名
+     等于把每一个 `GPIO_ACTIVE_LOW` 脚的电平反过来。这块板子上：ADC 复用器的
+     `amux-en`（低电平才接通）被反过来 → 复用器全程断开，四根轴和电压梯按键全读
+     悬空脚；地址位 `amux-a` 被反过来 → 每次选通道都选错。现在的约定写死在
+     `board/rk3326-xifan-r36max2.dts` 的注释里：地址位声明 `ACTIVE_HIGH`（逻辑==物理），
+     `amux-en` 保留 `ACTIVE_LOW` 而驱动改成**逻辑断言**（接通写 1），`rumble-gpio`
+     实测高电平转 → `ACTIVE_HIGH`。
+   - **裸的 `gpios` 属性必须传 `con_id = NULL`。** gpiolib 用
+     `gpio_suffixes = {"gpios","gpio"}` 拼候选名：con_id 非空时只找
+     `"<con_id>-gpios"` / `"<con_id>-gpio"`，con_id 为 NULL 才找裸 `gpios`。传字符串
+     `"gpios"` 就变成去找 `gpios-gpios`，永远 -ENOENT；而这段代码对 -ENOENT 是
+     **故意容忍**的（desc 置 NULL 继续跑），于是模块加载正常、17 个键码都注册进
+     input、`/sys/kernel/debug/gpio` 里一个消费者都没有、dmesg 一条错都不打。
+     顺带解释了一个假象：厂商 DT 把震动写成单数 `rumble-gpio`，正好命中第二条后缀，
+     所以 `devm_gpiod_get_optional(dev,"rumble",...)` 看起来"能用"。
+   - **改 DT 极性必须重启才生效，重载模块没用；只改驱动则 `rmmod` + `modprobe` 即可。**
+   - 判定手法：`cat /sys/kernel/debug/gpio` 看 label 有没有被认领，比读代码猜错误码快得多。
+     抓事件用 `build/k72-evcap.sh` + `build/k72-evread.sh`（注意本机 evtest 1.36
+     **没有 `--raw`**，带上它只会写一份 usage 进文件；正常模式事件行是
+     `type 1 (EV_KEY), code 304 (BTN_SOUTH), value 1`，`value` 前有逗号）。
+   - 真机结果：17 个 GPIO 键 down/up 全部成对，四根轴 `ABS_X/Y/RX/RY` 满行程 ±1800，
+     `adc-keys` 的音量加减正常，震动用 `build/r36-rumble.c` 走标准 FF 通路验证
+     （焊盘 hi=转、随后回 lo=停；`struct ff_effect` 在这个 ABI 上是 **48 字节**，
+     自己拼缓冲区会 EFAULT，所以在设备上用 `<linux/input.h>` 编译最稳）。
 
 **换内核的安全网**（这套做法让升级变成低风险操作）：BOOT 分区里的文件全部带版本后缀
 （`Image` / `Image-7.2.8`、`rk3326-xifan-r36max2.dtb` / `…-7.2.8.dtb`、
@@ -249,13 +277,11 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 - 蓝牙 `hci0: command 0x204b tx timeout`：AIC 的 BT 固件没配好，必要时 blacklist `btusb`。
 - 按键目前只有 input 事件，没有用户空间映射（掌机按键不能当键盘用：joystick 事件不会被
   内核 kbd handler 绑定，所以没法用按键登录）。
-- **7.2.8 上摇杆不可用**：7.x 删掉了整数 GPIO API（`gpio_get_value_cansleep`、
-  `gpio_is_valid`、`devm_gpio_request_one`）和 `include/linux/of_gpio.h`，而
-  `rocknix-joypad.c` 大量依赖它们 —— Rocknix 那个 gpiolib 回退补丁也因此
-  "File to patch" 找不到文件而冲突。两条路：把驱动改写成 gpiod 消费者 API
-  （按钮采集 / 轮询 / 震动三处，约 40-60 行，长期正确），或者纯用设备树里主线的
-  `adc-joystick` + `gpio-keys-polled`（不写驱动，但单 ADC 电压梯的组合键行为可能不如原
-  驱动）。6.12.79 那条线上摇杆是好的。
+- **摇杆还差的两件小事**：轴方向只验证了"满行程能打到 ±1800"，没逐方向核对
+  `invert-absx/absry` 这几个厂商调过的标志，也没验证单 ADC 电压梯的**组合键**
+  （比如同时按两个键产生的中间电压档）；6.12.79 那条线目前跑的还是镜像里自带的整数
+  GPIO 版模块，gpiod 版虽然同样能编（同一份源码），但没在 6.12 上重装验证过——
+  注意它和新 dtb 的极性是配套的，别只换一半。
 - 1 GB RAM：没上 zram/swap，编译大项目要省着点。
 
 ## 许可与第三方来源

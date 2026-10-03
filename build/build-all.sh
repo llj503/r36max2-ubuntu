@@ -35,12 +35,23 @@ echo "kernel version: $KVER"
 ls "$OUT/lib/modules/" 2>&1
 
 echo "=== [4/6] build rocknix joypad (external) ==="
-echo "    NOTE: needs the legacy integer GPIO API (gpio_get_value_cansleep,"
-echo "    gpio_is_valid, devm_gpio_request_one) and of_gpio.h.  Those are gone in"
-echo "    7.x, so this step only produces a module on the 6.12 tree; on 7.x it"
-echo "    fails until the driver is converted to the gpiod consumer API."
+echo "    The last patch converts the driver to the gpiod consumer API, which is"
+echo "    what lets the SAME source build on 6.12 and on 7.x (the integer GPIO API"
+echo "    and of_gpio.h are gone in 7.x).  That conversion ties the module to the"
+echo "    DT polarity flags in board/rk3326-xifan-r36max2.dts:"
+echo "      amux-a/amux-b ACTIVE_HIGH (address bits: logical == physical),"
+echo "      amux-en       ACTIVE_LOW  and the driver ASSERTS it to connect the mux,"
+echo "      rumble-gpio   ACTIVE_HIGH (measured: pad high spins the motor),"
+echo "      every button  as declared - gpiod reads them logically, so the legacy"
+echo "      active_level comparison is preserved."
+echo "    Building this patch set against an unconverted board dtb gives a module"
+echo "    that loads, registers input nodes and then reports nothing."
 cd "$JOYPAD" || exit 1
-for p in "$JP"/001-legacy-kernel-platform-remove-returns-int.patch "$JP"/003-export-joypad-input-g-and-vfs-ns.patch "$JP"/0001-add-xifan-device-vibrator.patch "$JP"/0002-add-vibration.patch; do
+for p in "$JP"/001-legacy-kernel-platform-remove-returns-int.patch \
+         "$JP"/003-export-joypad-input-g-and-vfs-ns.patch \
+         "$JP"/0001-add-xifan-device-vibrator.patch \
+         "$JP"/0002-add-vibration.patch \
+         /mnt/e/ubuntu/build/joypad-gpiod.patch; do
   [ -f "$p" ] || continue
   if patch -p1 --dry-run -s -i "$p" >/dev/null 2>&1; then
     patch -p1 -s -i "$p" >/dev/null 2>&1 && echo "patched: $(basename "$p")"

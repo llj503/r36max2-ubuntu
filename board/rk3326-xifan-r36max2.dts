@@ -152,13 +152,32 @@
 		/* adc mux channel count */
 		amux-count = <4>;
 		amux-channel-mapping = <3 2 0 1>;
-		/* adc mux select(a,b) gpio */
-		amux-a-gpios = <&gpio2 RK_PC0 GPIO_ACTIVE_LOW>;
+		/*
+		 * ADC mux lines.  The rocknix driver drives these as plain
+		 * levels (an address bit pair plus an active-low INH/enable),
+		 * and the legacy integer GPIO API ignored DT polarity entirely.
+		 * The gpiod conversion honours it, so the flags now decide
+		 * whether the sticks work:
+		 *   sel_a/sel_b are address bits -> ACTIVE_HIGH means "logical
+		 *   == physical", which is the level table the driver ships.
+		 *   (sel_b was already ACTIVE_HIGH; leaving sel_a ACTIVE_LOW
+		 *   inverted every channel select and read the wrong axis.)
+		 *   en is the mux disable pin, low connects the mux, so
+		 *   ACTIVE_LOW is the honest description and the driver
+		 *   asserts it (writes logical 1) before each read.
+		 */
+		amux-a-gpios = <&gpio2 RK_PC0 GPIO_ACTIVE_HIGH>;
 		amux-b-gpios = <&gpio2 RK_PB7 GPIO_ACTIVE_HIGH>;
 		/* adc mux enable gpio */
 		amux-en-gpios = <&gpio2 RK_PB3 GPIO_ACTIVE_LOW>;
 		
-		rumble-gpio = <&gpio0 RK_PB7 GPIO_ACTIVE_LOW>;
+		/* Measured on hardware (r36max2, 2026-10-02): driving this line low
+		 * silences the motor and high spins it, so the enable is active-HIGH.
+		 * The vendor tree said ACTIVE_LOW, which the legacy GPIO API hid
+		 * (gpio_set_value() ignores polarity); the moment the driver was
+		 * converted to gpiod logical writes, the inverted flag made the motor
+		 * run from probe onwards. */
+		rumble-gpio = <&gpio0 RK_PB7 GPIO_ACTIVE_HIGH>;
 		
 		/* adc calculate scale */
 		button-adc-scale = <2>;

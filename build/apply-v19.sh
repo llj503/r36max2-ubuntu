@@ -165,11 +165,18 @@ for u in systemd-udevd-control.socket systemd-udevd-kernel.socket; do
 done
 rm -f "$W/multi-user.target.wants/wpa_supplicant-nl80211@wlan0.service" \
       "$W/multi-user.target.wants/wpa_supplicant@wlan0.service"
+# Masking is stronger than just removing the alias: NetworkManager/dbus-activated
+# wpa_supplicant would otherwise start an instance that fights r36-wpa@wlan0 for
+# the same nl80211 socket and steals the association.
+for u in wpa_supplicant-nl80211@.service wpa_supplicant-wired@.service wpa_supplicant.service; do
+  ln -sf /dev/null "$W/$u"
+done
 # suspend enters but nothing wakes this board yet -> keep it masked
 for t in suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target sleep.target; do
   ln -sf /dev/null "$W/$t"
 done
-chmod 644 "$W"/r36-*.service "$W"/r36-*.timer "$W"/99-r36-power.conf 2>/dev/null || true
+chmod 644 "$W"/r36-*.service "$W"/r36-*.timer \
+          "$R/etc/systemd/logind.conf.d/99-r36-power.conf" 2>/dev/null || true
 echo "  wants: $(ls "$W/multi-user.target.wants/" | tr '\n' ' ')"
 
 echo "=== 6. depmod + cleanup ==="
