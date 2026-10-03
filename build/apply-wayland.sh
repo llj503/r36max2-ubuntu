@@ -42,12 +42,16 @@ cp -f "$SRC/r36-keymapper.py"      "$R/usr/local/bin/r36-keymapper.py"
 cp -f "$SRC/r36-wayland"           "$R/usr/local/bin/r36-wayland"
 cp -f "$SRC/r36-shot.py"           "$R/usr/local/bin/r36-shot.py"
 cp -f "$SRC/r36-shot2.py"          "$R/usr/local/bin/r36-shot2.py"
+cp -f "$SRC/r36-osk.py"            "$R/usr/local/bin/r36-osk"
+cp -f "$SRC/r36-evsnap.py"         "$R/usr/local/bin/r36-evsnap"
 cp -f "$SRC/zz-r36-wayland.sh"     "$R/etc/profile.d/zz-r36-wayland.sh"
 chmod 644 "$R/etc/xdg/weston/weston.ini" "$R/etc/systemd/system/weston.service" \
           "$R/etc/systemd/system/r36-keymapper.service" "$R/etc/profile.d/zz-r36-wayland.sh"
 chmod 755 "$R/usr/local/bin/r36-keymapper.py" "$R/usr/local/bin/r36-wayland" \
-          "$R/usr/local/bin/r36-shot.py" "$R/usr/local/bin/r36-shot2.py"
+          "$R/usr/local/bin/r36-shot.py" "$R/usr/local/bin/r36-shot2.py" \
+          "$R/usr/local/bin/r36-osk" "$R/usr/local/bin/r36-evsnap"
 python3 -m py_compile "$R/usr/local/bin/r36-keymapper.py" && echo "  keymapper compiles"
+python3 -m py_compile "$R/usr/local/bin/r36-osk" && echo "  osk compiles"
 
 echo "=== [3] opt-in, not enabled ==="
 for u in weston r36-keymapper; do
@@ -56,10 +60,18 @@ for u in weston r36-keymapper; do
 done
 echo "  start manually:  r36-wayland start    (weston pulls the keymapper in)"
 echo "  bridge alone  :  systemd-run --unit=r36-km-test /usr/bin/python3 /usr/local/bin/r36-keymapper.py -v"
+echo "  type with no keyboard:  r36-osk        (uinput keyboard driven by wofi's grid)"
 
 echo "=== [4] the two things that must not regress ==="
 grep -q 'locking=false' "$R/etc/xdg/weston/weston.ini" || { echo "!! locking is on: a locked panel cannot be unlocked without a keyboard"; exit 1; }
 grep -q 'ExecStopPost=.*chvt 1' "$R/etc/systemd/system/weston.service" || { echo "!! weston.service lost its console restore"; exit 1; }
+# the on-screen keyboard is the only way to type here, and its front-end is wofi:
+# no wofi in the package list means r36-osk ships a keyboard with no keys to click
+case " $PKGS " in *" wofi "*) : ;; *) echo "!! wofi dropped from PKGS - r36-osk has no grid"; exit 1;; esac
+[ -x "$R/usr/local/bin/r36-osk" ] || { echo "!! r36-osk not staged"; exit 1; }
+chroot "$R" /usr/local/bin/r36-osk --list >/dev/null 2>&1 \
+  && echo "  r36-osk --list works in the chroot (pages: $(chroot "$R" /usr/local/bin/r36-osk --list | grep -c columns))" \
+  || { echo "!! r36-osk --list failed in the chroot"; exit 1; }
 command -v chroot >/dev/null
 [ -e "$R/usr/bin/chvt" ] || echo "  !! kbd missing: weston.service's chvt restore will fail silently again"
 echo "  weston backends present: $(ls "$R"/usr/lib/*/libweston-*/ 2>/dev/null | grep -c backend)"
