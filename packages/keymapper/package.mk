@@ -4,7 +4,7 @@
 # r36-hostkeys, the first-boot SSH host key generator that lets the image ship
 # with zero baked-in host keys.
 
-PKG_NAME="r36-keymapper"
+PKG_NAME="keymapper"
 PKG_VERSION="1.0"
 PKG_LICENSE="GPL-2.0-or-later"
 PKG_SITE="https://github.com/llj503/r36max2-ubuntu"

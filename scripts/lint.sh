@@ -52,6 +52,16 @@ for f in $(git ls-files -- '*package.mk'); do
     fi
     bash -n "$f" || { echo "PACKAGE.MK-SYNTAX $f"; fail=1; }
 done
+# 3) 目录名必须等于 PKG_NAME。scripts/build / scripts/unpack 用「依赖名」找目录，
+#    而 source 完 package.mk 之后 PKG_NAME 会被配方自己的值覆盖，两跳之间不一致
+#    就会去找一个不存在的目录 —— v21 第一次跑到 bootlog 就是这个错：
+#    "unable to source package - r36-bootlog/package.mk does not exist"。
+for f in $(git ls-files -- '*package.mk'); do
+    grep -q '^PKG_NAME=' "$f" || continue
+    d=$(basename "$(dirname "$f")")
+    n=$(sed -n 's/^PKG_NAME="\([^"]*\)"/\1/p' "$f" | head -1)
+    [ "$d" = "$n" ] || { echo "PKG-NAME-MISMATCH $f：目录=$d 但 PKG_NAME=$n"; fail=1; }
+done
 
 echo "lint: $(git ls-files | wc -l) tracked, ${#SH[@]} shell, ${#PY[@]} python"
 exit $fail

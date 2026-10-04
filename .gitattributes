@@ -31,9 +31,9 @@ Makefile    text eol=lf
 *.pdf       binary
 
 # 让 GitHub 按语言正确高亮这些没有扩展名的文件
-packages/r36-bootlog/r36-bootlog          text eol=lf linguist-language=Shell
-packages/r36-status-screen/r36-status-screen    text eol=lf linguist-language=Shell
-packages/r36-expand-root/r36-expand-root      text eol=lf linguist-language=Shell
-packages/r36-expand-root/r36-finish-expand    text eol=lf linguist-language=Shell
-packages/r36-fwswap/r36-fwswap           text eol=lf linguist-language=Shell
-packages/r36-usb-gadget/r36-usb-gadget       text eol=lf linguist-language=Shell
+packages/bootlog/r36-bootlog          text eol=lf linguist-language=Shell
+packages/status-screen/r36-status-screen    text eol=lf linguist-language=Shell
+packages/expand-root/r36-expand-root      text eol=lf linguist-language=Shell
+packages/expand-root/r36-finish-expand    text eol=lf linguist-language=Shell
+packages/fwswap/r36-fwswap           text eol=lf linguist-language=Shell
+packages/usb-gadget/r36-usb-gadget       text eol=lf linguist-language=Shell

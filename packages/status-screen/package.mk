@@ -5,7 +5,7 @@
 # one block device when the RO state would change - fixed in v20, see
 # WIFI-AND-SHARING.md).
 
-PKG_NAME="r36-status-screen"
+PKG_NAME="status-screen"
 PKG_VERSION="1.0"
 PKG_LICENSE="GPL-2.0-or-later"
 PKG_SITE="https://github.com/llj503/r36max2-ubuntu"

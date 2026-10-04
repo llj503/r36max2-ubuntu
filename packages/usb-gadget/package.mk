@@ -2,7 +2,7 @@
 # r36-usb-gadget: USB gadget role for the dwc2 controller (ssh over the
 # Type-C cable when no WiFi is configured).
 
-PKG_NAME="r36-usb-gadget"
+PKG_NAME="usb-gadget"
 PKG_VERSION="1.0"
 PKG_LICENSE="GPL-2.0-or-later"
 PKG_SITE="https://github.com/llj503/r36max2-ubuntu"

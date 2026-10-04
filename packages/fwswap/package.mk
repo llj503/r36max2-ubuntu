@@ -2,7 +2,7 @@
 # r36-fwswap: BOOT-partition switch to the alternate AIC firmware bundle
 # (BOOT:\fw\aic8800DC) via the use-boot-fw marker file.
 
-PKG_NAME="r36-fwswap"
+PKG_NAME="fwswap"
 PKG_VERSION="1.0"
 PKG_LICENSE="GPL-2.0-or-later"
 PKG_SITE="https://github.com/llj503/r36max2-ubuntu"

@@ -3,7 +3,7 @@
 # keyboard, no UART and no host-mode USB, so a text file on the FAT partition
 # is the only practical input channel; results come back as wifi-status.txt.
 
-PKG_NAME="r36-wifi-setup"
+PKG_NAME="wifi-setup"
 PKG_VERSION="1.0"
 PKG_LICENSE="GPL-2.0-or-later"
 PKG_SITE="https://github.com/llj503/r36max2-ubuntu"

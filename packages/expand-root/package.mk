@@ -2,7 +2,7 @@
 # r36-expand-root: online root partition expansion (2 GiB image -> full card),
 # no reboot.
 
-PKG_NAME="r36-expand-root"
+PKG_NAME="expand-root"
 PKG_VERSION="1.0"
 PKG_LICENSE="GPL-2.0-or-later"
 PKG_SITE="https://github.com/llj503/r36max2-ubuntu"

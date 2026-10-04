@@ -2,7 +2,7 @@
 # r36-bootlog: periodic full-state report to BOOT:\r36-boot.txt - the board's
 # black-box flight recorder (no UART on this hardware).
 
-PKG_NAME="r36-bootlog"
+PKG_NAME="bootlog"
 PKG_VERSION="1.0"
 PKG_LICENSE="GPL-2.0-or-later"
 PKG_SITE="https://github.com/llj503/r36max2-ubuntu"
