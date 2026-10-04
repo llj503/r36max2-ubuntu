@@ -89,6 +89,9 @@ build/                本机 scratch，不入库：第三方源码、CMake 中�
 
 ## 从零构建
 
+改完东西先跑 `make lint`（等价于 `bash scripts/lint.sh`）：按 shebang 找出所有 shell
+与 python 脚本做语法检查，并确认没有文件被放回 `build/`。GitHub Actions 跑的就是它。
+
 前置：WSL2 Ubuntu（或任意能交叉编译的 Debian 系），需要
 `gcc-aarch64-linux-gnu device-tree-compiler rsync xz-utils squashfs-tools u-boot-tools sshpass`。
 

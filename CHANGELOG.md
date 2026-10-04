@@ -18,11 +18,13 @@
 ## 兼容性处理
 
 - 477 个文件用 `git mv` 移动，历史可追。
-- 脚本与文档里 **146 处** 指向旧目录的路径引用被自动改写（`build/x`、`/mnt/e/ubuntu/build/x`、
+- 脚本与文档里 **171 处** 指向旧目录的路径引用被自动改写（`build/x`、`/mnt/e/ubuntu/build/x`、
   `board/x`、`out/x`、`shots/x` 五类），只有确实对应"已移动的被跟踪文件"才改写；README 里
   5 处通配写法（`build/v20-*.sh` 这类）手工修正。
 - `.gitattributes` 的 linguist 条目、`.gitignore` 的忽略规则跟着新路径更新。
-- 全部 `.sh` 过 `bash -n`、全部 `.py` 过 `py_compile`，0 失败。
+- 全部脚本过语法检查（`make lint` → `scripts/lint.sh`：373 个 shell、36 个 python，0 失败）。
+- 新增 `make lint` 与 `.github/workflows/lint.yml`：CI 只做语法与目录约定检查，
+  真正的构建需要 WSL + aarch64 交叉工具链 + 一块真机，不适合放进 Actions。
 - 未被改写的两类路径是**故意的**：
   1. `build/` 仍然是脚本的本机 scratch 目录（第三方源码、CMake 中间产物、`wifi-cred.txt`），
      只是不再存放仓库文件；
