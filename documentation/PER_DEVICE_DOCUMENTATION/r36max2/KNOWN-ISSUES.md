@@ -31,9 +31,11 @@
   列表→启动→回列表的回路。真 ROM 在另一张 128 GB 卡上，而那张卡是**绝对不碰**的
   （上面有能用的 ArkOS + ROMS），所以要么由他把 ROM 拷到 64 GB 卡的根分区（还有 ~51 GB 空闲），
   要么另想办法；这一步需要他参与决定拷哪些。
-- **左摇杆导航还没被眼睛确认**：`joystick1left/up` 绑定是照 `InputConfig.cpp` 的判定写进去的，
-  原始轴事件也确认过满行程（`ABS_X/Y/RX/RY` ±1800），但"推摇杆光标到底动没动、方向对不对"
-  只有看屏幕才知道 —— 反了就用 `scripts/k72-es-sticknav.sh flip`。
+- ~~左摇杆导航还没被眼睛确认~~ **已确认（2026-10-04）**：`joystick1left/up` 是照
+  `InputConfig.cpp` 的判定写进去的，目视结果推摇杆能移动光标、能切条目、**方向正确**
+  （在 `r36-es --kmsdrm` 下测，weston 全程没启动）。原始轴事件满行程（`ABS_X/Y/RX/RY` ±1800）
+  早先也实测过。唯一还没逐个方向核对的是厂商 dtb 里的 `invert-absx/absry` 标志 —— 既然实测
+  方向就是对的，这条只剩文档层面的意义；真出现反向用 `scripts/k72-es-sticknav.sh flip`。
 - **weston 的 vblank 丢失又出现了，但形态不同**：2026-10-03 20:49:17 起再次打出
   `[CRTC:39:crtc-0] vblank wait timed out`（`WARNING drivers/gpu/drm/drm_atomic_helper.c:1921`），
   到 21:31 还在间歇增加；**但这一轮 weston 侧 0 条 `Device or resource busy`、画面全程可以操作**。

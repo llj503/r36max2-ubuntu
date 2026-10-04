@@ -31,7 +31,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 | Wayland 图形会话（weston 14） | ⚠️ 起得来、能合成；VOP 会丢 vblank —— 有时永久卡死（只能重启），有时只是间歇 WARN 而画面仍可操作 | [WAYLAND.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md) |
 | 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对；但**跑 ES 时要停桥**（抢设备） | [JOYPAD-BRIDGE.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/JOYPAD-BRIDGE.md) |
 | 虚拟键盘（`r36-osk`：uinput + wofi 网格） | ✅ 按键流已无人值守逐事件验证；点击那一步要屏幕能用 | [OSK.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/OSK.md) |
-| EmulationStation（batocera 分支，桌面 GL） | ✅ 编出 117 MB 二进制，weston 里起窗口、列表、**启动回路实测跑通**；摇杆导航待眼睛确认 | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
+| EmulationStation（batocera 分支，桌面 GL） | ✅ 117 MB 二进制，**不需要 weston**：`r36-es --kmsdrm` 下目视确认出画面、摇杆切条目方向正确；22 秒窗口内内核 stall 计数 0→0 | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
