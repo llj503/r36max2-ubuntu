@@ -1,0 +1,262 @@
+#!/bin/bash
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# scripts/image - assemble the r36max2 .img.xz from ${BUILD}.
+#
+# Ported from the v20 pack-v20.sh with the non-determinism removed:
+#   * fixed FAT volume id + ext4 UUID (distributions/rk3326/options)
+#   * /etc/r36max2-build-info carries SOURCE_DATE_EPOCH, not wall clock
+#   * lazy_itable_init off so the ext4 metadata is fully written at mkfs time
+#   * xz -T1 (single thread; -T0 output depends on host core count)
+#   * vendor blobs verified against sources/vendor-blobs.sha256
+#
+# The verification gate from v20 is kept and extended: module vermagic per
+# kernel, dtb gpio polarity flags, weston present-but-not-enabled, zero SSH
+# host keys, empty machine-id, no wpa credentials, dpkg manifest present.
+# Any failure exits nonzero BEFORE compression.
+
+
+# root helper: passwordless sudo if available; otherwise WSL2's root session
+# (wsl.exe -u root needs no password and shares this filesystem)
+if command -v wsl.exe >/dev/null 2>&1 && ! sudo -n true 2>/dev/null; then
+  SUDO() { wsl.exe -u root -- "$@"; }
+else
+  SUDO() { sudo "$@"; }
+fi
+
+. config/options ""
+
+IMG_V="${IMG_V:-${DISTRO_VERSION}}"
+IMG="${TARGET_IMG}/r36max2-ubuntu-${IMG_V}.img"
+VENDOR="${ROOT}/sources/vendor"
+BLOBS_SUMS="${ROOT}/sources/vendor-blobs.sha256"
+MNT="${BUILD}/.mount"
+KVER="$(get_pkg_variable linux PKG_VERSION)"
+
+LINUX_INSTALL="$(get_install_dir linux)"
+INITRAMFS_INSTALL="$(get_install_dir initramfs)"
+FW_INSTALL="$(get_install_dir aic8800-dc-fw)"
+
+echo "=== [1] tidy the staging tree so rsync sees empty /proc /sys /dev ==="
+R="${BUILD}/image/system"
+[ -d "${R}/usr/bin" ] || die "image: staging tree missing - build the image package first"
+for m in proc sys dev/pts dev/shm; do
+  mountpoint -q "${R}/$m" && SUDO umount -l "${R}/$m" 2>/dev/null || true
+done
+find "${R}/proc" "${R}/sys" -mindepth 1 -delete 2>/dev/null || true
+find "${R}/dev" -mindepth 1 -not -path "${R}/dev/null" -delete 2>/dev/null || true
+rm -rf "${R}/run/"* "${R}/tmp/"* 2>/dev/null || true
+# modules_install leaves build/source symlinks into the multi-GB kernel tree;
+# shipping them means a dangling symlink on every card
+for kv in "${R}"/lib/modules/*; do rm -f "${kv}/build" "${kv}/source" 2>/dev/null || true; done
+echo "  rootfs size: $(du -sh "${R}" | cut -f1)"
+echo "  free: $(df -h . | tail -1 | awk '{print $4}')"
+
+echo "=== [2] vendor u-boot blobs ==="
+for b in idbloader.img uboot.img trust.img; do
+  [ -f "${VENDOR}/${b}" ] || die "image: ${VENDOR}/${b} missing - run scripts/extract-vendor-blobs.sh (see BUILD.md)"
+done
+if [ -f "${BLOBS_SUMS}" ]; then
+  ( cd "${VENDOR}" && sha256sum -c "${BLOBS_SUMS}" ) || die "image: vendor blob checksum mismatch"
+  echo "  blobs verified against sources/vendor-blobs.sha256"
+else
+  ( cd "${VENDOR}" && sha256sum idbloader.img uboot.img trust.img ) > "${BLOBS_SUMS}"
+  echo "  recorded ${BLOBS_SUMS} (first run; enforce on every later run)"
+fi
+
+echo "=== [3] partition + filesystems ==="
+BOOT_SECTORS="$((${BOOT_SIZE_SECTORS}))"
+ROOT_SECTORS="$((${SYSTEM_SIZE_SECTORS}))"
+IMG_SECTORS=$((262144 + ROOT_SECTORS))
+P2SECTORS=${ROOT_SECTORS}
+SUDO losetup -D 2>/dev/null || true
+mkdir -p "${TARGET_IMG}" "${MNT}/boot" "${MNT}/root"
+rm -f "${IMG}"
+truncate -s "$((IMG_SECTORS*512))" "${IMG}"
+printf 'label: dos\nunit: sectors\n\nstart=%s, size=%s, type=c, bootable\nstart=%s, size=%s, type=83\n' \
+  "${BOOT_START_SECTOR}" "${BOOT_SIZE_SECTORS}" "${SYSTEM_START_SECTOR}" "${P2SECTORS}" \
+  | SUDO sfdisk -q "${IMG}"
+SUDO dd if="${VENDOR}/idbloader.img" of="${IMG}" bs=512 seek=${BLOB_IDBLOADER_SECTOR} conv=notrunc,fsync status=none
+SUDO dd if="${VENDOR}/uboot.img"     of="${IMG}" bs=512 seek=${BLOB_UBOOT_SECTOR}     conv=notrunc,fsync status=none
+SUDO dd if="${VENDOR}/trust.img"     of="${IMG}" bs=512 seek=${BLOB_TRUST_SECTOR}     conv=notrunc,fsync status=none
+SUDO losetup -P -f "${IMG}"
+LOOP=$(SUDO losetup -j "${IMG}" | cut -d: -f1)
+echo "  loop=${LOOP}"
+for i in 1 2; do for _ in $(seq 1 40); do [ -b "${LOOP}p$i" ] && break; sleep 0.4; done; done
+# fixed volume identity + fully-initialized inode tables (deterministic)
+SUDO mkfs.vfat -F 32 -n "${BOOT_LABEL}" -i "${BOOT_VOLUME_ID#0x}" "${LOOP}p1" >/dev/null
+SUDO mkfs.ext4 -q -L "${SYSTEM_LABEL}" -U "${SYSTEM_UUID}" -m 1 \
+  -E lazy_itable_init=0,lazy_journal_init=0 "${LOOP}p2"
+SUDO mount "${LOOP}p1" "${MNT}/boot"
+SUDO mount "${LOOP}p2" "${MNT}/root"
+
+echo "=== [4] FAT: kernel, uInitrd, dtbs, boot.ini variants ==="
+SUDO cp "${LINUX_INSTALL}/.image/Image" "${LINUX_INSTALL}/.image/"rk3326-xifan-r36max2*.dtb "${MNT}/boot/"
+SUDO cp "${INITRAMFS_INSTALL}/.image/uInitrd" "${MNT}/boot/"
+SUDO cp "${FW_INSTALL}/lib/firmware/aic8800DC/"* "${MNT}/root/" 2>/dev/null || true
+
+make_bootini() {   # $1=dtb  $2=output
+  cat <<INI | SUDO tee "$2" >/dev/null
+odroidgoa-uboot-config
+
+setenv bootargs "rootwait rw net.ifnames=0 fbcon=rotate:0 console=tty0 loglevel=5 systemd.show_status=1"
+
+if test -e mmc 1:1 rescue; then
+  setenv bootargs "\${bootargs} systemd.unit=rescue.target"
+  echo "r36max2: RESCUE mode"
+fi
+
+setenv loadaddr "0x02000000"
+setenv initrd_loadaddr "0x01100000"
+setenv dtb_loadaddr "0x01f00000"
+
+load mmc 1:1 \${loadaddr} Image
+load mmc 1:1 \${initrd_loadaddr} uInitrd
+load mmc 1:1 \${dtb_loadaddr} $1
+
+booti \${loadaddr} \${initrd_loadaddr} \${dtb_loadaddr}
+INI
+}
+make_bootini "rk3326-xifan-r36max2.dtb"         "${MNT}/boot/boot.ini"
+make_bootini "rk3326-xifan-r36max2-usbhost.dtb" "${MNT}/boot/boot-usbhost.ini"
+for f in boot.ini boot-usbhost.ini; do
+  echo "  $(printf '%-18s' $f) $(SUDO grep -oE 'Image[^ ]*|rk3326[^ ]*dtb' "${MNT}/boot/$f" | tr '\n' ' ')"
+done
+SUDO grep -q '{dtb}' "${MNT}/boot/boot.ini" && { echo "!! boot.ini uses a variable filename"; exit 1; }
+
+cat <<'TXT' | SUDO tee "${MNT}/boot/r36-switches.txt" >/dev/null
+r36max2 Ubuntu - 这张 BOOT 分区上的开关
+
+  wifi.txt      换网络 / 换人用这块板子：新建文本文件 wifi.txt，两行
+                    SSID=你的WiFi名
+                    PSK=你的密码
+                （可选第三行 COUNTRY=CN）。开机 30 秒内、以及之后每分钟检查一次，
+                内容变了就自动写进 wpa_supplicant 并重连，不用重刷。
+                结果写回 wifi-status.txt：连上会给出 IP，连不上会列出附近热点。
+                **镜像里不带任何 WiFi 凭据**，不放这个文件就只有 SSH 有线路径可走。
+                注意这块板子只能 2.4GHz + WPA2（见 HARDWARE.md）。
+                参考 wifi-example.txt（改名去掉 -example 即可生效）。
+  rescue        新建同名空文件 -> 以 rescue.target 启动
+  noscreen      新建同名空文件 -> 关掉屏幕上的状态页（刷屏或黑屏时用这个自救）
+  r36-log       新建同名空文件 -> 立刻再写一份状态报告到 r36-boot.txt
+  usbhost       想用第二组 USB 主机控制器（试 Type-C 插键盘）：把 boot-usbhost.ini
+                改名成 boot.ini 覆盖掉即可，先备份原来那份
+  fw\aic8800DC  一套备用的 AIC WiFi 固件。要改用它们：新建空文件
+                use-boot-fw，开机会把内核固件搜索路径指到这里并重载 WiFi 驱动
+
+  图形（weston / 摇杆键鼠桥）装在系统里但**默认不启动**。SSH 进去：
+      r36-wayland start        # 起 weston，键鼠桥跟着起（BindsTo）
+      r36-wayland status       # 看合成器与摇杆桥的状态
+      systemctl stop weston    # 回文字控制台
+  注意：长时间跑 weston 后这块 VOP 可能丢翻页完成中断（屏幕冻在最后一帧）。
+
+  每次开机 40 秒后（之后每 2 分钟）设备把完整状态写到 r36-boot.txt。
+  u-boot 启动失败时自己会往这个分区写 error.log —— 黑屏就先看它。
+  镜像里不带 WiFi 凭据，也不带 SSH 主机密钥（首次开机 ssh-keygen -A 生成）；
+  默认账号 ubuntu / 密码 ubuntu，**刷完第一件事就是 passwd 改掉**。
+TXT
+cat <<'EXM' | SUDO tee "${MNT}/boot/wifi-example.txt" >/dev/null
+SSID=my-wifi-name
+PSK=my-passphrase-at-least-8-chars
+COUNTRY=CN
+EXM
+mkdir -p "${MNT}/boot/fw/aic8800DC"
+SUDO cp "${FW_INSTALL}/lib/firmware/aic8800DC/"* "${MNT}/boot/fw/aic8800DC/" 2>/dev/null || true
+
+SUDO mkdir -p "${MNT}/boot/extlinux"
+cat <<ELX | SUDO tee "${MNT}/boot/extlinux/extlinux.conf" >/dev/null
+LABEL Ubuntu
+  LINUX /Image
+  INITRD /uInitrd
+  FDT /rk3326-xifan-r36max2.dtb
+  APPEND rootwait rw net.ifnames=0 fbcon=rotate:0 console=tty0 loglevel=5 systemd.show_status=1
+ELX
+
+echo "=== [5] copy the rootfs ==="
+SUDO rsync -aHAX --numeric-ids \
+  --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' \
+  "${R}/" "${MNT}/root/"
+SUDO mkdir -p "${MNT}/root/proc" "${MNT}/root/sys" "${MNT}/root/dev/pts" "${MNT}/root/dev/shm" "${MNT}/root/run" "${MNT}/root/boot"
+for n in "null c 1 3 666" "zero c 1 5 666" "random c 1 8 666" "urandom c 1 9 666" "console c 5 1 600"; do
+  set -- $n
+  SUDO mknod -m "$3" "${MNT}/root/dev/$1" "$2" "$4" "$5" 2>/dev/null || true
+done
+SUDO rm -f "${MNT}/root/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service"
+# deterministic build info: SOURCE_DATE_EPOCH, not wall clock
+echo "kernel=${KVER} base=ubuntu-${OS_VERSION} apt-snapshot=${APT_SNAPSHOT} epoch=${SOURCE_DATE_EPOCH} wayland=installed-not-enabled credentials=none" \
+  | SUDO tee "${MNT}/root/etc/r36max2-build-info" >/dev/null
+[ -s "${MNT}/root/etc/machine-id" ] || SUDO truncate -s 0 "${MNT}/root/etc/machine-id"
+sync
+df -h "${LOOP}p2" | tail -1 | awk '{print "  root partition: size="$2" used="$3" avail="$4" use%="$5}'
+
+echo "=== [6] verify what actually landed in the image ==="
+fail=0
+v() { echo "  $*"; }
+n=$(SUDO find "${MNT}/root/lib/modules/${KVER}" -name '*.ko' 2>/dev/null | wc -l)
+v "/lib/modules/${KVER}: $n .ko"
+[ "$n" -gt 50 ] || { v "    !! too few modules"; fail=1; }
+[ -e "${MNT}/root/lib/modules/${KVER}/modules.dep" ] || { v "    !! no modules.dep (depmod missing)"; fail=1; }
+[ -e "${MNT}/root/lib/modules/${KVER}/build" ] && { v "    !! build symlink survived"; fail=1; }
+for m in aic8800_fdrv aic_load_fw rocknix-singleadc-joypad; do
+  f="${MNT}/root/lib/modules/${KVER}/extra/$m.ko"
+  if SUDO [ -e "$f" ]; then
+    vv=$(SUDO modinfo -F vermagic "$f" 2>/dev/null | awk '{print $1}')
+    v "    extra/$m.ko -> vermagic $vv"
+    [ "$vv" = "${KVER}" ] || { v "      !! wrong kernel"; fail=1; }
+  else
+    v "    !! missing extra/$m.ko"; fail=1
+  fi
+done
+v "weston: $(SUDO ls "${MNT}/root/usr/bin/weston" 2>/dev/null || echo MISSING)"
+if SUDO ls "${MNT}/root/etc/systemd/system/multi-user.target.wants/weston.service" >/dev/null 2>&1; then
+  v "  !! weston IS enabled (must be opt-in)"; fail=1
+else
+  v "  weston enabled? no (correct)"
+fi
+hk=$(SUDO ls "${MNT}/root/etc/ssh/ssh_host_"* 2>/dev/null | wc -l)
+v "ssh host keys in image: $hk (must be 0)"
+[ "$hk" = 0 ] || fail=1
+SUDO ls "${MNT}/root/etc/systemd/system/multi-user.target.wants/r36-hostkeys.service" >/dev/null 2>&1 \
+  || { v "  !! host-key regen unit not enabled"; fail=1; }
+v "machine-id: $([ -s "${MNT}/root/etc/machine-id" ] && echo NON-EMPTY || echo empty)"
+[ -s "${MNT}/root/etc/machine-id" ] && fail=1
+v "wpa configs with creds: $(SUDO grep -l '^psk=' "${MNT}/root/etc/wpa_supplicant/"*wlan0.conf 2>/dev/null | wc -l) (must be 0)"
+SUDO grep -q '^psk=' "${MNT}/root/etc/wpa_supplicant/"*wlan0.conf 2>/dev/null && fail=1
+SUDO [ -e "${MNT}/root/etc/r36max2/dpkg-manifest.txt" ] \
+  || { v "  !! dpkg manifest missing"; fail=1; }
+v "modules-load.d: $(SUDO tr '\n' ' ' < "${MNT}/root/etc/modules-load.d/r36max2.conf")"
+for d in "${MNT}/boot/rk3326-xifan-r36max2.dtb"; do
+  v "FAT $(basename $d) gpio flags: $(SUDO dtc -I dtb -O dts "$d" 2>/dev/null | grep -E 'rumble-gpio|amux-a-gpios' | tr -s ' \t' ' ' | tr '\n' ' ')"
+done
+[ "$fail" = 0 ] || { echo "!! verification FAILED - not compressing"; exit 1; }
+
+echo "=== [7] close it out and compress ==="
+sync
+SUDO umount "${MNT}/root" "${MNT}/boot"
+SUDO e2fsck -fy "${LOOP}p2" >/dev/null 2>&1 || true
+sync
+SUDO losetup -d "${LOOP}"
+mkdir -p "${TARGET_IMG}"
+time xz -T1 -6 -c "${IMG}" > "${TARGET_IMG}/r36max2-ubuntu-${IMG_V}.img.xz"
+( cd "${TARGET_IMG}" && sha256sum "r36max2-ubuntu-${IMG_V}.img.xz" \
+    | tee "r36max2-ubuntu-${IMG_V}.img.xz.sha256" )
+ls -la "${TARGET_IMG}/r36max2-ubuntu-${IMG_V}.img.xz"
+
+# build manifest: inputs, toolchain, dpkg state, output hash
+MANIFEST="${TARGET_IMG}/r36max2-ubuntu-${IMG_V}.manifest.txt"
+{
+  echo "image: r36max2-ubuntu-${IMG_V}"
+  echo "source_date_epoch: ${SOURCE_DATE_EPOCH}"
+  echo "kernel: ${KVER}"
+  echo "ubuntu-base: $(get_pkg_variable rootfs-base PKG_VERSION) sha256=$(get_pkg_variable rootfs-base PKG_SHA256)"
+  echo "apt-snapshot: ${APT_SNAPSHOT}"
+  echo "gcc: $(cat "${TOOLCHAIN}/etc/r36max2-toolchain.gcc" 2>/dev/null || echo '?') / binutils $(cat "${TOOLCHAIN}/etc/r36max2-toolchain.binutils" 2>/dev/null || echo '?')"
+  echo "busybox: $(get_pkg_variable busybox PKG_VERSION)"
+  echo "joypad: $(get_pkg_variable rocknix-joypad PKG_VERSION)"
+  echo "aic8800: $(get_pkg_variable aic8800 PKG_VERSION) / fw $(get_pkg_variable aic8800-dc-fw PKG_VERSION)"
+  echo "vendor-blobs:"; sed 's/^/  /' "${BLOBS_SUMS}"
+  echo "dpkg-count: $(wc -l < "${R}/etc/r36max2/dpkg-manifest.txt" 2>/dev/null || echo 0)"
+  cat "${TARGET_IMG}/r36max2-ubuntu-${IMG_V}.img.xz.sha256"
+} > "${MANIFEST}"
+echo "=== manifest: ${MANIFEST}"
+echo "=== IMAGE DONE ==="

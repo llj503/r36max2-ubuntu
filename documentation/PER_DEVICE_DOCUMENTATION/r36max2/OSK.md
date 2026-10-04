@@ -36,7 +36,7 @@ implemented by compositor; IME will be disabled`），所以"输入法风格"的
   静默消失，测试时看起来像"网格根本没起来"。
 - 启动时会先数内核里的 flip/vblank stall 条数并**大声警告**屏幕可能已经冻住
   （见 [WAYLAND.md](WAYLAND.md) 的 weston 卡死一节）——不然就会出现"让人对着一个根本不刷新的屏幕点击"这种事。
-- 不需要屏幕也能验证：`tools/capture/k72-osk-headless.sh` 用一个假的 wofi（`/tmp/oskstub/wofi`
+- 不需要屏幕也能验证：`tools/capture/osk-headless.sh` 用一个假的 wofi（`/tmp/oskstub/wofi`
   按脚本吐出按键标签）驱动真 uinput 键盘，再用 `tools/capture/r36-evsnap.py`
   （装成 `/usr/local/bin/r36-evsnap`）从 `/dev/input/eventN` 抓回原始 `EV_KEY` 流逐条比对。
   实测 `h i SHFT a RET #!? @ SPC DEL< X` 产生的按下序列
@@ -44,8 +44,8 @@ implemented by compositor; IME will be disabled`），所以"输入法风格"的
   没有卡键、SHIFT 两次按下都释放、退出后 uinput 节点自动消失。
   比对时按**键名**取码（`osk.K["2"]`），不要手写数字：`KEY_1=2、KEY_2=3`，
   我正因为硬编码成 2 而误报过一次 FAIL。
-  离线那一层还有 `tools/input/verify/k72-osk-maptest.py`（重复项检查、动作/按键解析、shift 语义、
+  离线那一层还有 `tools/input/verify/osk-maptest.py`（重复项检查、动作/按键解析、shift 语义、
   格子尺寸是否够拇指点）。
 - 还没做完的一步：**真人用摇杆点网格**（要屏幕能用）。落点用
   `foot -- sh -c 'stty -icanon; cat > /tmp/osk-typed.txt'` 抓住，SSH 直接读回，
-  不依赖任何人看屏幕判断（`tools/input/diagnostics/k72-osk-live.sh` + `k72-osk-read.sh`）。
+  不依赖任何人看屏幕判断（`tools/input/diagnostics/osk-live.sh` + `k72-osk-read.sh`）。

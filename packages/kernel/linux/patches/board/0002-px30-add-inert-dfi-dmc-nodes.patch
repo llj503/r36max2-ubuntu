@@ -1,0 +1,35 @@
+--- a/arch/arm64/boot/dts/rockchip/px30.dtsi
++++ b/arch/arm64/boot/dts/rockchip/px30.dtsi
+@@ -348,6 +348,32 @@
+ 		};
+ 	};
+ 
++	dfi: dfi@ff610000 {
++		reg = <0x00 0xff610000 0x00 0x400>;
++		compatible = "rockchip,px30-dfi";
++		rockchip,pmu = <&pmugrf>;
++		status = "okay";
++	};
++
++	dmc: dmc {
++		compatible = "rockchip,px30-dmc";
++		devfreq-events = <&dfi>;
++		clocks = <&cru SCLK_DDRCLK>;
++		clock-names = "dmc_clk";
++		operating-points-v2 = <&dmc_opp_table>;
++		uptreshold = <40>;
++		downdifferential = <20>;
++		status = "okay";
++	};
++
++	dmc_opp_table: dmc_opp_table {
++		compatible = "operating-points-v2";
++		opp-924000000 {
++			opp-hz = /bits/ 64 <924000000>;
++			opp-microvolt = <1125000>;
++		};
++	};
++
+ 	pmugrf: syscon@ff010000 {
+ 		compatible = "rockchip,px30-pmugrf", "syscon", "simple-mfd";
+ 		reg = <0x0 0xff010000 0x0 0x1000>;

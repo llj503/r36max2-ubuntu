@@ -49,5 +49,5 @@ r36-glcheck probe    # 枚举 EGL config 并逐个试 window surface
 内核侧还有一个坑：panfrost `probe failed -22`。真因是一句
 `vdd_logic: Restricting voltage, 975000-950000uV` —— 主线 `rk3326.dtsi` 的 GPU OPP 最低档要
 950 mV，而 `vdd_logic` 已被别的消费者顶在 975 mV，regulator 核心遇到 min>max 直接 EINVAL，
-死在 `panfrost_devfreq_init`。修法就是板级 dts 自带一张 OPP 表（见 [`projects/r36max2/dt/rk3326-xifan-r36max2.dts`](../../../projects/r36max2/dt/rk3326-xifan-r36max2.dts)
+死在 `panfrost_devfreq_init`。修法就是板级 dts 自带一张 OPP 表（见 [`projects/RK3326/dt/rk3326-xifan-r36max2.dts`](../../../projects/RK3326/dt/rk3326-xifan-r36max2.dts)
 里的 `r36_gpu_opp`）。顺带：DTC 1.7.2 不接受在所有 `/ { }` 之外写带标签的裸节点。
