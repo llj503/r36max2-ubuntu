@@ -33,7 +33,7 @@
 sha256sum -c r36max2-ubuntu-v20.img.xz.sha256
 ```
 
-内核与镜像的对应关系（README「内核版本」一节）：
+内核与镜像的对应关系（[../documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md)）：
 
 - **v2–v19** —— 6.12.79 主线 + Rocknix 三层补丁，EmuELEC 之外的通用 Linux 开发环境
 - **v20** —— 双内核：7.2.8 默认、6.12.79 同卡保留（改名即可回退），加 weston 会话、

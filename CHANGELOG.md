@@ -30,3 +30,23 @@
      只是不再存放仓库文件；
   2. `/mnt/e/ubuntu` 是原作者构建机上的盘符，换机器请自行替换；`archive/` 里的一次性脚本
      没有逐条改写它们写死的输出目录。
+
+## README 拆分（同一天的第二步）
+
+README 原本 640 行，把所有移植细节堆在一个文件里。按 ROCKNIX 的做法（短首页 +
+`documentation/PER_DEVICE_DOCUMENTATION/<设备>/` 放正文）拆成：
+
+- `README.md` 91 行：简介、状态表、文档索引、目录结构。
+- `documentation/PER_DEVICE_DOCUMENTATION/r36max2/` 新增 14 篇主题文档：
+  `HARDWARE` `BUILD` `FLASH` `DEBUGGING` `GPU` `WAYLAND` `JOYPAD-BRIDGE` `OSK`
+  `EMULATIONSTATION` `WIFI-AND-SHARING` `KERNELS` `KNOWN-ISSUES` `LICENSING` `SECURITY`（`.md`）。
+
+拆分是**逐字节切片**，没有改写或概括任何一段正文；只有三类改动：标题从 `##` 升为 `#`、
+图片链接改成同目录的 `images/001.jpg`、以及"见上一节/见下文"这类相对指向改成跨文件链接。
+指向 README 章节的其它引用（`Makefile`、`archive/README.md`、`distributions/README.md`、
+`scripts/pack-v20.sh`、`scripts/apply-wayland.sh`）跟着改指主题文档。
+
+顺手修掉两个既有坏链：`刷写与首启说明.md` 里指向已不存在的 `out/` 的链接，以及一个写死
+`/E:/ubuntu/...` 的本地路径链接（改为指向 `distributions/` 的校验记录）。全仓 markdown
+链接检查：0 坏链。
+

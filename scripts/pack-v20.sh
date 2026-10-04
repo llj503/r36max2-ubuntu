@@ -5,7 +5,7 @@
 #     choice) and boot-612.ini is the one-line fallback; u-boot 2017.09 cannot
 #     take a ${var} as a filename, so every variant is its own literal file.
 #   * the Wayland stack + joypad->mouse bridge in the rootfs, installed but NOT
-#     enabled (weston on 7.2.8 can wedge the VOP, see README).
+#     enabled (weston on 7.2.8 can wedge the VOP, see documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md).
 #
 # Everything is verified against the image itself before it is compressed:
 # module vermagic per kernel, dtb gpio polarity flags, no credentials, no baked
@@ -137,8 +137,8 @@ r36max2 Ubuntu (v20) - 这张 BOOT 分区上的开关
       r36-wayland status       # 看合成器与摇杆桥的状态
       systemctl stop weston    # 回文字控制台
   注意：7.2.8 + 这颗 VOP 在长时间跑 weston 后可能出现翻页完成中断丢失（屏幕冻在
-  最后一帧，只能重启）。先在串口/显示无解的情况下谨慎使用，详见 README 的
-  “Wayland（weston）”一节。
+  最后一帧，只能重启）。先在串口/显示无解的情况下谨慎使用，详见仓库
+  documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md。
 
   每次开机 40 秒后（之后每 2 分钟）设备把完整状态写到 r36-boot.txt。
   u-boot 启动失败时自己会往这个分区写 error.log —— 黑屏就先看它。

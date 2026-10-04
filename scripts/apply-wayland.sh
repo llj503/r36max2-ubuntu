@@ -7,7 +7,7 @@
 #
 # Kept separate from apply-v19.sh because the graphical stack is opt-in: weston
 # and the keymapper are installed but NOT enabled, since weston on 7.2.8 can stall
-# the VOP (see README "Wayland" section) and a card that boots straight into a
+# the VOP (see documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md) and a card that boots straight into a
 # frozen panel is a card nobody can debug without a serial cable they do not have.
 set -euo pipefail
 R=${R:-/root/r36/rootfs}

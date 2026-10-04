@@ -1,5 +1,5 @@
 # 入口只有静态检查。真正的构建要在 WSL/Debian 里交叉编译，
-# 步骤见 README 的「从零构建」与「出 v20 的实际顺序」两节。
+# 步骤见 documentation/PER_DEVICE_DOCUMENTATION/r36max2/BUILD.md（含出 v20 的实际顺序）。
 SHELL := /bin/bash
 
 .PHONY: help lint
