@@ -2,19 +2,19 @@
 # k72-esrn-autorun.sh - put the smoke test ON the board and let the board decide when to
 # run it, so no host-side relay has to be re-armed every few minutes.
 #
-#   bash tools/emulationstation/runtime/k72-esrn-autorun.sh arm      # push scripts + start the detached watcher (phase A)
-#   bash tools/emulationstation/runtime/k72-esrn-autorun.sh status   # watcher log, smoke output, done marker
-#   bash tools/emulationstation/runtime/k72-esrn-autorun.sh read     # full phase-A transcript
-#   bash tools/emulationstation/runtime/k72-esrn-autorun.sh off      # kill the watcher (does not touch the build)
+#   bash scripts/k72-esrn-autorun.sh arm      # push scripts + start the detached watcher (phase A)
+#   bash scripts/k72-esrn-autorun.sh status   # watcher log, smoke output, done marker
+#   bash scripts/k72-esrn-autorun.sh read     # full phase-A transcript
+#   bash scripts/k72-esrn-autorun.sh off      # kill the watcher (does not touch the build)
 #
 # Watcher rule: exit as soon as the build is dead AND no binary exists (that used to be
 # reported as "still building" by a plain timeout loop, which hid real failures).
 #
-#   TREE=es   bash tools/emulationstation/runtime/k72-esrn-autorun.sh arm     # watch the batocera build
-#   TREE=esrn bash tools/emulationstation/runtime/k72-esrn-autorun.sh arm     # watch the ROCKNIX build
-#   TREE=es   bash tools/emulationstation/runtime/k72-esrn-autorun.sh status  # watcher + build + pressure in one view
-#   TREE=es   bash tools/emulationstation/runtime/k72-esrn-autorun.sh read    # full phase-A transcript
-#   PHASE=B TREE=es bash tools/emulationstation/runtime/k72-esrn-autorun.sh arm   # ask for the deeper phase
+#   TREE=es   bash scripts/k72-esrn-autorun.sh arm     # watch the batocera build
+#   TREE=esrn bash scripts/k72-esrn-autorun.sh arm     # watch the ROCKNIX build
+#   TREE=es   bash scripts/k72-esrn-autorun.sh status  # watcher + build + pressure in one view
+#   TREE=es   bash scripts/k72-esrn-autorun.sh read    # full phase-A transcript
+#   PHASE=B TREE=es bash scripts/k72-esrn-autorun.sh arm   # ask for the deeper phase
 set -uo pipefail
 PW=ubuntu
 DEV=${DEV:-192.168.31.209}

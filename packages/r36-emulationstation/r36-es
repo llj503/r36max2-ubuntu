@@ -43,7 +43,7 @@ find_es() {
         [ "$c" -nt "$ES" ] && ES=$c
     done
     [ -n "$ES" ] && return 0
-    echo "  !! no emulationstation binary found - build finished? (TREE=es bash tools/emulationstation/runtime/k72-es-resume.sh status)"
+    echo "  !! no emulationstation binary found - build finished? (TREE=es bash scripts/k72-es-resume.sh status)"
     return 1
 }
 

@@ -3,7 +3,7 @@
 # cmake, and compile whatever is left at -O1 -g0.
 #
 # Two hard-won rules are encoded here (learned the expensive way at 19:00 today, see
-# tools/emulationstation/diagnostics/k72-esrn-recover.sh):
+# scripts/k72-esrn-recover.sh):
 #   1. With CMake's "Unix Makefiles" generator every object depends on flags.make, so a
 #      `cmake -S -B` reconfigure silently invalidates the whole tree.  This script refuses
 #      to run if make would decide to reconfigure, and it never calls cmake itself.
@@ -14,9 +14,9 @@
 #      On this 1 GB board GuiMenu.cpp at -O3 was 705 MB RSS with 27 % CPU efficiency
 #      (memory PSI 21, io PSI 71); at -O1 the same file finished in ~5 min with io PSI ~0.
 #
-#   bash tools/emulationstation/runtime/k72-es-resume.sh status              # read-only: staleness + pending count
-#   bash tools/emulationstation/runtime/k72-es-resume.sh go                  # resume the build (TREE=es|esrn)
-#   TREE=esrn bash tools/emulationstation/runtime/k72-es-resume.sh go        # same for the ROCKNIX tree
+#   bash scripts/k72-es-resume.sh status              # read-only: staleness + pending count
+#   bash scripts/k72-es-resume.sh go                  # resume the build (TREE=es|esrn)
+#   TREE=esrn bash scripts/k72-es-resume.sh go        # same for the ROCKNIX tree
 set -uo pipefail
 PW=ubuntu
 DEV=${DEV:-192.168.31.209}
@@ -72,7 +72,7 @@ while read -r f; do
 done < /tmp/pend.list | sort -rn | head -4 | awk '{printf "      %6s lines  %s\n", $1, $2}'
 
 if [ "$cmd" != go ]; then
-  echo "  (status only - nothing started; run: TREE=$TREE bash tools/emulationstation/runtime/k72-es-resume.sh go)"
+  echo "  (status only - nothing started; run: TREE=$TREE bash scripts/k72-es-resume.sh go)"
   exit 0
 fi
 
@@ -98,5 +98,5 @@ else
 fi
 tail -3 "$LOG" | sed 's/^/     /'
 echo "  mem: $(grep -E 'MemAvailable|^SwapFree' /proc/meminfo | tr '\n' ' ')"
-echo "  poll with: TREE=$TREE bash tools/emulationstation/runtime/k72-es-resume.sh status"
+echo "  poll with: TREE=$TREE bash scripts/k72-es-resume.sh status"
 EOS

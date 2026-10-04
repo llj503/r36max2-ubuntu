@@ -2,7 +2,7 @@
 # run-phase.sh - run a smoke phase on the board with the parameters set INSIDE WSL.
 #
 # Why this wrapper exists (measured 2026-10-03 20:19): the call
-#     TREE=es PHASE=B WAIT=30 wsl.exe -- bash /mnt/e/ubuntu/tools/emulationstation/runtime/k72-esrn-autorun.sh run
+#     TREE=es PHASE=B WAIT=30 wsl.exe -- bash /mnt/e/ubuntu/scripts/k72-esrn-autorun.sh run
 # arrived as `phase=A wait=25` - the assignments on the Windows side never crossed into
 # the WSL process, and k72-esrn-autorun.sh then used its own defaults.  It had looked like
 # the channel worked all evening only because the values I passed (TREE=es, PHASE=A) were
@@ -24,4 +24,4 @@ export TREE="$TR"
 export DIR="/root/$TR"
 export BIN="/root/$TR/build/es-app/emulationstation"
 export LOG="/tmp/es-$TR-build.log"
-exec bash tools/emulationstation/runtime/k72-esrn-autorun.sh run
+exec bash scripts/k72-esrn-autorun.sh run

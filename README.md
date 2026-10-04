@@ -33,7 +33,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 | Wayland 图形会话（weston 14） | ⚠️ 起得来、能合成；VOP 会丢 vblank —— 有时永久卡死（只能重启），有时只是间歇 WARN 而画面仍可操作 | `r36-wayland start`，见下文 |
 | 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对；但**跑 ES 时要停桥**（抢设备） | `packages/r36-keymapper/r36-keymapper.py`，见下文 |
 | 虚拟键盘（`r36-osk`：uinput + wofi 网格） | ✅ 按键流已无人值守逐事件验证；点击那一步要屏幕能用 | `r36-osk`，见下文 |
-| EmulationStation（batocera 分支，桌面 GL） | ✅ 编出 117 MB 二进制，weston 里起窗口、列表、**启动回路实测跑通**（art-book 主题上屏、按键导航正常）；摇杆导航待眼睛确认 | `tools/emulationstation/runtime/k72-es-resume.sh` + `/usr/local/bin/r36-es`，见下文 |
+| EmulationStation（batocera 分支，桌面 GL） | ✅ 编出 117 MB 二进制，weston 里起窗口、列表、**启动回路实测跑通**（art-book 主题上屏、按键导航正常）；摇杆导航待眼睛确认 | `scripts/k72-es-resume.sh` + `/usr/local/bin/r36-es`，见下文 |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
@@ -275,7 +275,7 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   之后 `rockchip-drm: vblank wait timed out on crtc 0` / `flip_done timed out` /
   `[CRTC:39:crtc-0] commit wait timed out` 每 10–40 秒循环，面板冻在最后一帧（看起来是"白屏带四角暗块"）。
   **停 weston、`chvt 1`、写 `fb0/blank=0` 都救不回来**，vsync 中断已经不再来了。
-  **加上 `[core] pageflip-timeout=500` 后的复测**（`scripts/k72-flip-churn.sh`：8 轮 × 12 秒、每轮把
+  **加上 `[core] pageflip-timeout=500` 后的复测**（`tools/gpu/runtime/k72-flip-churn.sh`：8 轮 × 12 秒、每轮把
   EGL 客户端 SIGKILL 掉复现"拆面"；`tools/host/verify/k72-flip-soak.sh`：12 分钟、每分钟起停一次客户端）：
   内核四个 flip/vblank 计数**全程 0 增量**，weston 一直活着，stop 之后控制台自动回来。为了不让
   "客户端根本没挂上"冒充成功，脚本先用 weston 的累计 CPU 时间证明真在合成——空闲 15 秒 ΔCPU=0 秒，
@@ -285,7 +285,7 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   pending flip, but as we are shutting down we can't wait to destroy it when the flip completes`），
   所以"23 分钟"可能只是延迟，真正弄丢 vsync 中断的是那次中途硬杀。
 - **但"中途硬杀"这条已被证伪，同时"只有重启能救"被证实**（2026-10-03 下午第二次发作）：
-  专门造的三个复现工具（`scripts/k72-killmidflip.sh` 在 flip 飞行途中 SIGKILL、`k72-sigtermflip.sh` 换
+  专门造的三个复现工具（`tools/gpu/runtime/k72-killmidflip.sh` 在 flip 飞行途中 SIGKILL、`k72-sigtermflip.sh` 换
   SIGTERM、`r36-fatalabort-device.sh` 让客户端自己 abort）全部**没能**弄丢 vsync；而第二次卡死发生在
   `pageflip-timeout=500` **已经生效**、屏幕**完全静止**（foot + 一个没人点的 wofi 网格，没有任何客户端
   起停）约 23 分钟的时候。于是"拆面"和"硬杀"两个触发假设都死了，剩下的嫌疑人只有"跑了多久"和
@@ -412,7 +412,7 @@ ROCKNIX 的 `emulationstation-next`（`-DGLES3=1`）也编到 73% 停在 `/root/
   正确做法是把优化级别作为 **make 命令行变量**传进去：
   `cmake --build build --parallel 1 -- "CXX_FLAGS=<flags.make 里的原值> -O1 -g0"`
   —— 命令行赋值优先于 flags.make，GCC 取最后一个 `-O`/`-g`，而 `CXX_DEFINES`/`CXX_INCLUDES`
-  仍由 flags.make 提供，所以不可能悄悄丢宏。真把时间戳弄脏了，`tools/emulationstation/diagnostics/k72-esrn-recover.sh` 的
+  仍由 flags.make 提供，所以不可能悄悄丢宏。真把时间戳弄脏了，`scripts/k72-esrn-recover.sh` 的
   救法是：先 `diff` 证明 flags.make 内容没变（变了就不敢复用旧对象），再 `touch` 全部 `.o`/`.a`。
 - 产物**不在** `build/es-app/` 下：batocera 的 CMakeLists 把 `CMAKE_RUNTIME_OUTPUT_DIRECTORY`
   设成仓库根 → `/root/es/emulationstation`（117 MB）。照 ROCKNIX 树的路径去找会把"链接成功"
@@ -425,7 +425,7 @@ ROCKNIX 的 `emulationstation-next`（`-DGLES3=1`）也编到 73% 停在 `/root/
   （`scripts/k72-esrn-fix-pugixml.sh`）。
 
 **冒烟测试故意分两阶段**（`tools/emulationstation/verify/es-smoke-device.sh`，跑在板子上，由 `/root/es-watch.sh` 在
-链接完成那一刻自己触发；宿主侧 `tools/emulationstation/runtime/k72-esrn-autorun.sh` + `tools/misc/runtime/k72-notify-wait.sh` 负责
+链接完成那一刻自己触发；宿主侧 `scripts/k72-esrn-autorun.sh` + `tools/misc/runtime/k72-notify-wait.sh` 负责
 "跑完了再通知"）：
 
 - **batocera 的 ES 少了 `es_systems.cfg` 会直接退出**（`ERROR es_systems.cfg file does not

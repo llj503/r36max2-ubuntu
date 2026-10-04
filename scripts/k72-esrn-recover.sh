@@ -20,8 +20,8 @@
 # CXX_DEFINES / CXX_INCLUDES still come from flags.make untouched - so no define can be
 # silently dropped.
 #
-#   bash tools/emulationstation/diagnostics/k72-esrn-recover.sh          # recover + resume at -O1
-#   bash tools/emulationstation/diagnostics/k72-esrn-recover.sh check    # read-only: counts, diff, pending list
+#   bash scripts/k72-esrn-recover.sh          # recover + resume at -O1
+#   bash scripts/k72-esrn-recover.sh check    # read-only: counts, diff, pending list
 set -uo pipefail
 PW=ubuntu
 DEV=${DEV:-192.168.31.209}
