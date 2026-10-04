@@ -18,7 +18,27 @@ v21 起，构建走 ROCKNIX 式框架：**先自建交叉工具链，再按 pack
    cpio --reproducible）；每版镜像附完整 manifest。apt 底座是"语义可复现"
    （dpkg 清单随镜像发布），字节级一致不承诺 —— 诚实边界。
 
-## 0) 前置：宿主必须能执行 arm64
+## 0) 前置：宿主必须能执行 arm64，而且构建目录必须在 ext4 上
+
+**不要把仓库放在 `/mnt/f`（drvfs/9p）上构建。** 实测：`scripts/build` 在每个包安装完要做
+sysroot 重定位，其中一步是
+
+```bash
+ln -sfn <新的目标路径> <一个已存在的、指向目录的符号链接>     # -sfn 里的 -n 就是不解引用
+```
+
+同一命令在两种文件系统上结果不同：
+
+| 位置 | 结果 |
+| --- | --- |
+| ext4（`/home/llj503/...`） | rc=0，链接被替换 |
+| 9p（`/mnt/f/...`） | `ln: failed to create symbolic link '.../lib/aarch64-r36max2-linux-gnu': Is a directory`，rc=1 |
+
+9p 上 `-n` 没起作用，`ln` 把已存在的链接当目录解引用、试图往里面创建，于是 `make image` 在
+`rootfs-base` 之后直接死掉 —— 报的是"Is a directory"，看起来像框架的 bug，其实是文件系统。
+所以正确做法是 `git clone` 到 WSL 的 ext4 里构建，产物（`target/*.img.xz` + `.sha256` +
+`.manifest.txt`）再拷回 Windows 侧刷卡。锁定的输入可以整目录 `rsync` 过去省一遍下载，
+拷完逐个 `sha256sum` 对存根核一遍（12 个输入全 OK）。
 
 ```bash
 make checkdeps        # 缺什么装什么；x86_64 宿主会要求 qemu-user-static（chroot arm64 用）
