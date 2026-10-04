@@ -19,7 +19,11 @@ set -u
 CONF=/etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 NET=/etc/systemd/network/80-wlan0.network
 STAMP=/var/lib/r36-wifi/applied
-MNT=/run/r36-boot
+# Same mountpoint as r36-bootlog and r36-status-screen on purpose: the kernel
+# refuses a second mount of the same block device when the RO state would change
+# ("mmcblk1p1: Can't mount, would change RO state"), and status-screen mounts the
+# partition read-only every 30s - exactly when this unit's timer fires.
+MNT=/mnt/boot
 log() { echo "r36-wifi-setup: $*"; }
 
 findfs_or_blkid() {
@@ -31,10 +35,17 @@ findfs_or_blkid() {
 BOOTDEV=$(findfs_or_blkid)
 [ -n "$BOOTDEV" ] || { log "no BOOT partition"; exit 0; }
 mkdir -p "$MNT"
+MNT_PRE=0
 if mountpoint -q "$MNT"; then
     MNT_PRE=1                      # somebody else already has it mounted; reuse it
-elif ! mount -o shortname=mixed,fmask=0022,dmask=0022 "$BOOTDEV" "$MNT" 2>/dev/null; then
+    # We have to write wifi-status.txt back, so a read-only mount is not enough.
+    mount -o remount,rw,shortname=mixed,fmask=0022,dmask=0022 "$MNT" 2>/dev/null
+elif ! mount -t vfat -o shortname=mixed,fmask=0022,dmask=0022 "$BOOTDEV" "$MNT" 2>/dev/null; then
     log "mount $BOOTDEV failed"; exit 0
+fi
+if ! mount | grep -q "on $MNT type vfat (rw"; then
+    log "BOOT is held read-only, retry on the next tick"
+    exit 0                         # never umount here: the read-only owner owns it
 fi
 leave() { [ "${MNT_PRE:-0}" = 1 ] || umount "$MNT" 2>/dev/null; }
 

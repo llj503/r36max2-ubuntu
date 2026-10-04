@@ -10,13 +10,15 @@ MNT=/mnt/boot
 
 while :; do
 	mkdir -p "$MNT" 2>/dev/null
-	if mount -t vfat -o shortname=mixed,ro "$(findfs LABEL=BOOT)" "$MNT" 2>/dev/null; then
+	MNT_PRE=0
+	mountpoint -q "$MNT" && MNT_PRE=1
+	if [ "$MNT_PRE" = 1 ] || mount -t vfat -o shortname=mixed,ro "$(findfs LABEL=BOOT)" "$MNT" 2>/dev/null; then
 		if [ -e "$MNT/noscreen" ]; then
-			umount "$MNT" 2>/dev/null
+			[ "$MNT_PRE" = 1 ] || umount "$MNT" 2>/dev/null
 			sleep 600
 			continue
 		fi
-		umount "$MNT" 2>/dev/null
+		[ "$MNT_PRE" = 1 ] || umount "$MNT" 2>/dev/null
 	fi
 
 	UP=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)

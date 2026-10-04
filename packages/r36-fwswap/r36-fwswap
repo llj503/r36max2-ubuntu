@@ -6,11 +6,16 @@ M=/mnt/boot
 ALT=$M/fw/aic8800DC
 
 mkdir -p "$M"
-mount -t vfat -o shortname=mixed "$(findfs LABEL=BOOT)" "$M" 2>/dev/null || { echo "r36-fwswap: no BOOT partition"; exit 0; }
+MNT_PRE=0
+if mountpoint -q "$M"; then
+	MNT_PRE=1
+else
+	mount -t vfat -o shortname=mixed "$(findfs LABEL=BOOT)" "$M" 2>/dev/null || { echo "r36-fwswap: no BOOT partition"; exit 0; }
+fi
 
 if [ ! -e "$M/use-boot-fw" ] || [ ! -d "$ALT" ]; then
 	echo "r36-fwswap: not requested (need $M/use-boot-fw and $ALT), leaving /lib/firmware in charge"
-	umount "$M"
+	[ "$MNT_PRE" = 1 ] || umount "$M"
 	exit 0
 fi
 
@@ -26,4 +31,4 @@ modprobe aic8800_fdrv
 sleep 6
 echo "r36-fwswap: wlan0 = $(ls /sys/class/net | tr '\n' ' ')"
 dmesg | tail -25
-umount "$M"
+[ "$MNT_PRE" = 1 ] || umount "$M"

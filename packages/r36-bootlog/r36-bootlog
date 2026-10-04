@@ -6,9 +6,17 @@ M=/mnt/boot
 UP=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)
 
 mkdir -p "$M"
-if ! mount -t vfat -o shortname=mixed,fmask=0022,dmask=0022 "$(findfs LABEL=BOOT)" "$M" 2>/dev/null; then
-	echo "r36-bootlog: no BOOT partition" >&2
-	exit 0
+# /mnt/boot is shared with r36-status-screen, r36-fwswap and r36-wifi-setup: the
+# kernel refuses a second mount of the same device when the RO state differs, so
+# reuse whatever is already there instead of failing outright.
+MNT_PRE=0
+if mountpoint -q "$M"; then
+	MNT_PRE=1
+else
+	if ! mount -t vfat -o shortname=mixed,fmask=0022,dmask=0022 "$(findfs LABEL=BOOT)" "$M" 2>/dev/null; then
+		echo "r36-bootlog: no BOOT partition" >&2
+		exit 0
+	fi
 fi
 
 # Refresh every 2 min for the first 6 hours, after that only when asked for by
@@ -104,7 +112,7 @@ log "===== end ====="
 
 cp "$OUT" "$M/r36-boot.txt"
 sync
-umount "$M"
+[ "$MNT_PRE" = 1 ] || umount "$M"
 
 # the screen is owned by r36-status-screen.service (tty3, redrawn every 45 s);
 # this script only writes the report onto the BOOT partition.
