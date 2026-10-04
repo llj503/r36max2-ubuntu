@@ -49,14 +49,17 @@ rm -rf "${R}/run/"* "${R}/tmp/"* 2>/dev/null || true
 # modules_install leaves build/source symlinks into the multi-GB kernel tree;
 # shipping them means a dangling symlink on every card
 for kv in "${R}"/lib/modules/*; do rm -f "${kv}/build" "${kv}/source" 2>/dev/null || true; done
-echo "  rootfs size: $(du -sh "${R}" | cut -f1)"
+echo "  rootfs size: $(SUDO du -sh "${R}" | cut -f1)"
 echo "  free: $(df -h . | tail -1 | awk '{print $4}')"
 
 # Measure before formatting, not after the rsync fails with ENOSPC halfway through.
 # The first framework run came out 2658 MiB against a 2 GiB partition and the packing
 # step died mid-copy with a message about the filesystem, not about the plan.
+# du has to run with SUDO: the apt layer hands the tree back to root on purpose, so an
+# unprivileged du silently skips 0700 directories (/root, /var/log/private, ...) and
+# reported 1457 MiB while warning about eleven directories it could not read.
 root_kb=$(( $((${SYSTEM_SIZE_SECTORS})) * 512 / 1024 ))
-need_kb=$(du -sk --exclude="${R}/proc" --exclude="${R}/sys" --exclude="${R}/dev" "${R}" 2>/dev/null | cut -f1)
+need_kb=$(SUDO du -sk --exclude="${R}/proc" --exclude="${R}/sys" --exclude="${R}/dev" "${R}" | cut -f1)
 echo "  root partition: $((root_kb/1024)) MiB, staging rootfs: $((need_kb/1024)) MiB"
 [ "${need_kb}" -lt "${root_kb}" ] || die "image: rootfs needs $((need_kb/1024)) MiB but SYSTEM_SIZE_SECTORS gives $((root_kb/1024)) MiB - raise it in distributions/${PROJECT}/options (and say so in the release notes)"
 free_mb=$(( (root_kb - need_kb) / 1024 ))
@@ -171,7 +174,7 @@ SSID=my-wifi-name
 PSK=my-passphrase-at-least-8-chars
 COUNTRY=CN
 EXM
-mkdir -p "${MNT}/boot/fw/aic8800DC"
+SUDO mkdir -p "${MNT}/boot/fw/aic8800DC"
 SUDO cp "${FW_INSTALL}/lib/firmware/aic8800DC/"* "${MNT}/boot/fw/aic8800DC/" 2>/dev/null || true
 
 SUDO mkdir -p "${MNT}/boot/extlinux"
