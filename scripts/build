@@ -471,7 +471,7 @@ record_timestamp BUILD_MAKEINSTALL
 # sysroot dirs above.  without this, a manual package dies on
 # "install: cannot create regular file '.../install_pkg/bootlog-1.0/usr/local/sbin/...'".
 if [ -n "${INSTALL}" ]; then
-  for d in /usr/local/bin /usr/local/sbin /etc/systemd/system; do
+  for d in /usr/local/bin /usr/local/sbin /usr/lib/systemd/system /etc/systemd/system; do
     mkdir -p "${INSTALL}${d}"
   done
 fi

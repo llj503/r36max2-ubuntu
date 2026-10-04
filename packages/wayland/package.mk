@@ -17,6 +17,8 @@ make_target() {
 }
 
 makeinstall_target() {
+  # neither of these dirs is on the framework's pre-created list
+  mkdir -p ${INSTALL}/etc/xdg/weston ${INSTALL}/etc/profile.d
   install -m 755 ${PKG_DIR}/r36-wayland ${INSTALL}/usr/local/bin/r36-wayland
   install -m 644 ${PKG_DIR}/weston.ini ${INSTALL}/etc/xdg/weston/weston.ini
   install -m 644 ${PKG_DIR}/weston.service ${INSTALL}/etc/systemd/system/weston.service
