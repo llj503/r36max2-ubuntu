@@ -290,6 +290,23 @@ trees=$(SUDO ls "${MNT}/root/lib/modules" 2>/dev/null | tr '\n' ' ')
 [ "${trees}" = "${KVER} " ] || { v "  !! /lib/modules holds: ${trees} (want ${KVER} only)"; fail=1; }
 v "  /lib/modules: ${trees}"
 
+# 5. every ELF the packages staged under /usr/local/bin must be arm64.  gpu-demos'
+#    Makefile hard-coded "gcc" in its recipes, so the framework's CC= only reached the
+#    command line and never the compiler actually invoked - a host-compiler leak would
+#    otherwise ship x86_64 ELF that dies on the board with an Exec format error that
+#    nobody can read, because this board has no console.
+staged=0
+for f in $(SUDO ls "${MNT}/root/usr/local/bin/" 2>/dev/null); do
+  magic=$(SUDO od -An -tx1 -N4 "${MNT}/root/usr/local/bin/${f}" 2>/dev/null | tr -d ' \n')
+  # a shell script launcher (r36-es) is expected here, not an ELF
+  [ "${magic}" = "7f454c46" ] || continue
+  staged=$((staged + 1))
+  machine=$(SUDO od -An -tx1 -j18 -N2 "${MNT}/root/usr/local/bin/${f}" 2>/dev/null | tr -d ' \n')
+  [ "${machine}" = "b700" ] \
+    || { v "  !! ${f} is not aarch64 ELF (e_machine=${machine:-unreadable})"; fail=1; }
+done
+v "  ${staged} staged ELF binaries, all aarch64"
+
 [ "$fail" = 0 ] || { echo "!! verification FAILED - not compressing"; exit 1; }
 
 echo "=== [7] close it out and compress ==="
