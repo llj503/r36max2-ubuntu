@@ -62,8 +62,18 @@ ArkOS/EmuELEC 卡上 dd 出来即可（偏移 32 KiB / 8 MiB / 12 MiB）；因�
 
 - `artifacts/prebuilt/`：卡上实测过的四份 `.ko` + `MANIFEST.sha256`（`v20-rootfs.sh` 用）。
 - `artifacts/es/`：板子上那份 `emulationstation` 二进制、`art-book-next` 主题 + `SHA256SUMS`
-  （`apply-es.sh` 用）。ES 不是这条流水线编出来的，所以它和 `.ko` 一样按"取回已验证的字节"
-  处理，而不是按"装上就算"处理。
+  （`apply-es.sh` 用）。取回的方式是 `DEV=192.168.0.141 bash scripts/fetch-card-artifacts.sh`：
+  先在**卡上**算好每个文件的 sha256，rsync 拉下来（约 400 MB，2.4G WiFi 上一趟 4 分钟），
+  再逐个用卡上那份哈希校我们这份 —— 对不上就直接失败，不写 SHA256SUMS。全程只读卡。
+  ES 不是这条流水线编出来的，所以它和 `.ko` 一样按"取回已验证的字节"处理，而不是按
+  "装上就算"处理。2026-10-04 拉回来的结果：二进制 117,246,560 B / sha `7bc65872…`，
+  主题 1612 个文件全部与卡上逐字节一致，`file` 确认是 ELF aarch64（带 debug_info、未 strip）。
+- 体积要盯：ES 二进制 + 主题 = **399 MB**，而 root 分区只有 2 GiB。要瘦身就按
+  `scripts/k72-es-theme-install.sh` 里量过的 `PRUNE=1`（剪掉没用到的 artwork 变体，实测
+  0 处悬空引用），别动二进制 —— 一 strip 就和卡上验过的那份不是同一串字节了。
+- `apply-es.sh` 写的 `es_settings.cfg` 只有 `ThemeSet`；卡上那份还有 `Language=zh_CN`、
+  `LastSystem=favorites`、`ShowFlags/ShowTags=auto`。中文界面要不要进镜像是没定过的事，
+  别让它在镜像和卡之间悄悄漂移。
 
 `pack-v20.sh` 的自检不是装饰：它挂载镜像后逐项核对**镜像里只有一棵模块树（7.2.8）**、
 **`extra` 里四个模块的 vermagic 与 `MANIFEST.sha256` 的 sha 都对得上**、**每个 `boot*.ini` 与
