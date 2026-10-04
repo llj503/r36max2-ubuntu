@@ -465,6 +465,17 @@ fi
 record_timestamp BUILD_MAKEINSTALL
 
 # make install
+# every manual package writes with install/cat straight into ${INSTALL} and assumes
+# the tree exists, but only the real build systems create their own destination
+# directories - so pre-create the ones the recipes share, same spirit as the common
+# sysroot dirs above.  without this, a manual package dies on
+# "install: cannot create regular file '.../install_pkg/bootlog-1.0/usr/local/sbin/...'".
+if [ -n "${INSTALL}" ]; then
+  for d in /usr/local/bin /usr/local/sbin /etc/systemd/system; do
+    mkdir -p "${INSTALL}${d}"
+  done
+fi
+
 pkg_call_exists_opt pre_makeinstall_${TARGET} && pkg_call
 
 if pkg_call_exists makeinstall_${TARGET}; then
