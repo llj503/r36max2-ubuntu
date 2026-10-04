@@ -6,7 +6,16 @@
 与 python 脚本做语法检查，并确认没有文件被放回 `build/`。GitHub Actions 跑的就是它。
 
 前置：WSL2 Ubuntu（或任意能交叉编译的 Debian 系），需要
-`gcc-aarch64-linux-gnu device-tree-compiler rsync xz-utils squashfs-tools u-boot-tools sshpass`。
+`gcc-aarch64-linux-gnu device-tree-compiler rsync xz-utils squashfs-tools u-boot-tools sshpass`，
+**外加 `qemu-user-static binfmt-support`** —— 后面每一步都要在 x86_64 上 chroot 进 arm64 的
+rootfs 跑 apt/depmod/systemctl。这里有个真踩过的坑：binfmt 规则是写进
+`/proc/sys/fs/binfmt_misc` 的运行时状态，**WSL 空闲超时把 VM 停掉就没了**，于是
+`chroot ... /bin/sh` 变成 `Exec format error`。2026-10-04 那次就是这样：脚本一路把配置写完、
+还打印了 `ROOTFS BUILD DONE`，而 rootfs 里一个包都没装上。现在 `scripts/build-rootfs.sh`、
+`apply-v19.sh`、`apply-wayland.sh`、`v20-rootfs.sh` 动手前先调
+`bash scripts/require-arm64.sh <rootfs>`（没有处理器就按 qemu 包里自带的规则注册，注册完
+立刻验证 host 自己还能跑二进制 —— 手写规则如果把 e_machine 掩码弄错，会把 x86_64 的
+`/usr/bin/ls` 也交给 qemu，整机立刻不可用，只能 `wsl --shutdown` 才救得回来）。
 
 v21 是**单内核镜像**：只编 7.2.8，只装 7.2.8 的模块树。6.12.79 以前作为回退保险整套装在卡上，
 现在那条路只留在 git 历史里（原因见 [KERNELS.md](KERNELS.md) 开头）。
@@ -20,8 +29,17 @@ bash scripts/k72-prepare.sh                                  # 搬 panel-generic
 K=/root/r36/linux-7.2.8 OUT=/root/r36/out72 bash scripts/build-all.sh   # 16 核 505 秒
 ```
 
-`build-all.sh` 一并编两个外部模块（rocknix joypad、AIC8800DC WiFi）。补丁层的处理方式见
+`build-all.sh` 编内核 + dtbs + 模块树，再编 AIC8800DC WiFi 驱动。补丁层的处理方式见
 [KERNELS.md](KERNELS.md)。
+
+摇杆驱动**不在这条流水线上重编**：`build-all.sh` 的 [4/6] 会把 `projects/r36max2/patches/`
+里那 5 个补丁往"解压干净的 pin 版本"上试一遍并如实报告 —— 2026-10-04 实测
+`001-legacy-kernel-platform-remove-returns-int` 有 1 个 hunk、`0002-add-vibration` 有 4 个、
+`joypad-gpiod` 有 10 个 hunk 打不上，剩下的源码里还留着 7.x 已经删掉的整数 GPIO 调用
+（`gpio_set_value` / `of_get_named_gpio_flags` / `devm_gpio_request`），所以它编不过。
+这不是构建脚本的 bug，是仓库里那份补丁集**复现不出卡上正在跑的驱动**；卡上那份是当初手工
+改出来的。镜像因此只带 `artifacts/prebuilt/*.ko`。[4/6] 每次重跑这个测试，补丁哪天追上了就会
+在日志里看见。
 
 > 外部模块现在**不**从这棵构建树进镜像：`scripts/v20-rootfs.sh` 只认
 > `artifacts/prebuilt/` 里在卡上实测过的那四份 `.ko`，并且逐个校 `MANIFEST.sha256` 与

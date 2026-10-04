@@ -20,6 +20,7 @@ echo "=== rootfs: $R ($(du -sh "$R" 2>/dev/null | cut -f1)) ==="
 [ -d "$R" ] || { echo "!! no staging rootfs at $R"; exit 1; }
 
 echo "=== [1] packages (weston, pointer/keyboard helpers, kbd for chvt) ==="
+bash "$REPO/scripts/require-arm64.sh" "$R" || exit 1
 mount -t proc proc "$R/proc" 2>/dev/null || true
 printf 'nameserver %s\n' "$WSLNS" > "$R/etc/resolv.conf"
 printf '#!/bin/sh\nexit 101\n' > "$R/usr/sbin/policy-rc.d"; chmod 755 "$R/usr/sbin/policy-rc.d"

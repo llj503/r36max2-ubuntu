@@ -31,6 +31,7 @@ echo "  staged dtb: $(sha256sum "$OUT/boot/rk3326-xifan-r36max2.dtb" | cut -c1-1
 echo "  200MHz opp voltage in the staged dtb: $(dtc -I dtb -O dts "$OUT/boot/rk3326-xifan-r36max2.dtb" 2>/dev/null | awk '/opp-table-gpu \{/{f=1} f&&/opp-microvolt/{print $3; exit}')"
 
 echo "=== 2. packages ==="
+bash "$REPO/scripts/require-arm64.sh" "$R" || exit 1
 mount -t proc proc "$R/proc" 2>/dev/null || true
 printf 'nameserver %s\n' "$WSLNS" > "$R/etc/resolv.conf"
 # postinst must not try to talk to systemd in here

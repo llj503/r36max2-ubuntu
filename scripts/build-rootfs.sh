@@ -1,12 +1,16 @@
 #!/bin/bash
-# Build the Ubuntu 26.04 rootfs for the R36 Max 2 (v2: http mirror, mkdir -p, module metadata).
+# Build the Ubuntu 26.04 rootfs for the R36 Max 2: unpack the base, apt, write config.
 set -u
 REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
-ROOT=/root/r36/rootfs
-OUT=/root/r36/out
+ROOT=${ROOT:-/root/r36/rootfs}
+OUT=${OUT:-/root/r36/out72}   # where scripts/build-all.sh staged Image/dtb/firmware
 # one kernel in this image; the module tree itself is staged by scripts/v20-rootfs.sh
 KVER=7.2.8
-TARBALL=$REPO/downloads/ubuntu-base-26.04.1-base-arm64.tar.gz
+TARBALL=${TARBALL:-/root/r36/downloads/ubuntu-base-26.04.1-base-arm64.tar.gz}
+# Canonical's own SHA256SUMS value for this exact file, checked before anything is
+# extracted: a rootfs built from a damaged tarball looks completely normal right up
+# until a step far away fails, and the failure it produces names the wrong component.
+BASE_SHA=${BASE_SHA:-5a1906794ced63a71a8119c3f211ef5f0bbe0a243001b4bbd41fdf80c5b219fd}
 CRED=$REPO/build/wifi-cred.txt
 # R36_BAKE_WIFI=0 builds an image with NO credentials in it - that is the mode
 # to use before handing the image to somebody else; they then drop wifi.txt on
@@ -21,11 +25,22 @@ else
 fi
 echo "target SSID: ${SSID:-<none, BOOT:\wifi.txt will be used>}   kernel: $KVER"
 
+[ -f "$TARBALL" ] || { echo "!! no $TARBALL - provision the ubuntu-base tarball (see BUILD.md)"; exit 1; }
+got=$(sha256sum "$TARBALL" | cut -d' ' -f1)
+[ "$got" = "$BASE_SHA" ] || { echo "!! $TARBALL is $got, want $BASE_SHA"; exit 1; }
+echo "ubuntu-base sha256 verified: $got"
+
 if [ ! -d "$ROOT/lib" ]; then
   echo "=== extracting ubuntu-base ==="
   mkdir -p "$ROOT"
   tar -xvpPf "$TARBALL" -C "$ROOT" >/dev/null 2>&1 || { echo "FATAL: extract failed"; exit 1; }
 fi
+
+# Everything below this line runs binaries out of the arm64 tree on an x86_64 host.
+# Without a binfmt handler every one of those calls fails with "Exec format error",
+# and until this check existed the script kept going, wrote its config files, and
+# printed ROOTFS BUILD DONE over a rootfs with nothing installed in it.
+bash "$REPO/scripts/require-arm64.sh" "$ROOT" || exit 1
 
 echo "=== apt sources (http, aliyun ubuntu-ports) ==="
 mkdir -p "$ROOT/etc/apt/sources.list.d" "$ROOT/etc/apt/apt.conf.d"
@@ -54,19 +69,34 @@ mount -t devpts devpts "$ROOT/dev/pts" 2>/dev/null
 rm -f "$ROOT/etc/hostname"
 
 echo "=== apt update ==="
-chroot "$ROOT" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get update 2>&1 | tail -6
+if ! chroot "$ROOT" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get update > "$ROOT/../apt-update.log" 2>&1; then
+  echo "!! apt update failed (network? resolver? mirror?):"; tail -6 /root/r36/apt-update.log | sed 's/^/    /'
+  exit 1
+fi
+tail -3 /root/r36/apt-update.log | sed 's/^/  /'
 
 echo "=== install packages ==="
-chroot "$ROOT" /usr/bin/env DEBIAN_FRONTEND=noninteractive \
+if ! chroot "$ROOT" /usr/bin/env DEBIAN_FRONTEND=noninteractive \
   apt-get install -y --no-install-recommends \
     ca-certificates openssh-server sudo wpasupplicant iw \
     iproute2 iputils-ping curl wget vim git htop tmux less procps \
-    kmod usbutils tzdata net-tools 2>&1 | tail -8
+    kmod usbutils tzdata net-tools >> /root/r36/apt-install.log 2>&1; then
+  echo "!! apt install failed:"; tail -8 /root/r36/apt-install.log | sed 's/^/    /'
+  exit 1
+fi
+tail -3 /root/r36/apt-install.log | sed 's/^/  /'
 
 echo "=== verify installs ==="
+# MISSING used to be printed and ignored.  A rootfs without sshd or wpa_supplicant
+# boots into a device that cannot be reached and cannot join a network, and this board
+# has no keyboard and no serial port to find that out with.
+missing=""
 for b in sshd wpa_supplicant ip apt-get depmod; do
-  printf "%-16s " "$b"; chroot "$ROOT" /bin/sh -c "command -v $b || ls /usr/sbin/$b 2>/dev/null" || echo MISSING
+  p=$(chroot "$ROOT" /bin/sh -c "command -v $b 2>/dev/null || ls /usr/sbin/$b 2>/dev/null" || true)
+  printf '  %-16s %s\n' "$b" "${p:-MISSING}"
+  [ -n "$p" ] || missing="$missing $b"
 done
+[ -n "$missing" ] && { echo "!! not present in the rootfs:$missing"; exit 1; }
 
 echo "=== kernel modules: not this script's job ==="
 # Which .ko belongs to which kernel cannot be answered by a filename or an mtime, so
@@ -80,7 +110,10 @@ echo "=== kernel modules: not this script's job ==="
 
 echo "=== firmware ==="
 mkdir -p "$ROOT/lib/firmware"
-cp -rf "$OUT/firmware/aic8800DC" "$ROOT/lib/firmware/" && echo "aic8800DC firmware installed"
+# this is where the WiFi firmware needs to be BEFORE any AIC module is loaded; the
+# driver falls back to BOOT:\fw\aic8800DC only if someone puts a use-boot-fw file there
+[ -d "$OUT/firmware/aic8800DC" ] || { echo "!! no $OUT/firmware/aic8800DC - run scripts/build-all.sh first"; exit 1; }
+cp -rf "$OUT/firmware/aic8800DC" "$ROOT/lib/firmware/" && echo "  aic8800DC firmware installed: $(ls "$ROOT/lib/firmware/aic8800DC" | wc -l) files"
 
 echo "=== autostart modules ==="
 mkdir -p "$ROOT/etc/modules-load.d"
@@ -174,7 +207,6 @@ chroot "$ROOT" /bin/sh -c '
   true'
 chroot "$ROOT" /bin/sh -c 'apt-get clean'
 
-echo "=== runtime resolv.conf (device-side DNS, not WSL's) ==="
 echo "=== runtime resolv.conf (device-side DNS, not WSL's) ==="
 # 不烧死某台路由器：设备侧走 systemd-networkd 从 DHCP 拿到的 DNS，这里只留公共
 # 解析器作离线兜底。旧版本把 192.168.31.1 写死，换网络后解析全废（ES 的

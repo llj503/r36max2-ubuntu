@@ -69,6 +69,7 @@ done
 
 echo
 echo "=== [4] chroot housekeeping + depmod ==="
+bash "$REPO/scripts/require-arm64.sh" "$R" || exit 1
 mount -t proc proc "$R/proc" 2>/dev/null || true
 printf 'nameserver %s\n' "$WSLNS" > "$R/etc/resolv.conf"
 printf '#!/bin/sh\nexit 101\n' > "$R/usr/sbin/policy-rc.d"; chmod 755 "$R/usr/sbin/policy-rc.d"
