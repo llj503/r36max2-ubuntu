@@ -1,0 +1,132 @@
+# boot-verify against 192.168.0.141  2026-10-04T20:44:45+08:00
+== identity ==
+  kernel : 7.2.8
+  uptime : 28325.13 s
+  dtb    : XiFan R36Max2
+  cmdline: rootwait rw net.ifnames=0 fbcon=rotate:0 console=tty0 loglevel=5 systemd.show_status=1
+  root   : (initrd-selected)
+== display / GPU ==
+  drm    : card0 card0-DSI-1 card1 renderD128 version 
+  light  : backlight 255/255
+  panfrost bound: /sys/bus/platform/drivers/panfrost/ff400000.gpu 
+  render nodes  : by-path card0 card1 renderD128 
+  fbcon     : (M) frame buffer device state=1
+== input ==
+    I: Bus=0019 Vendor=0000 Product=0000 Version=0000
+      N: Name="rk805 pwrkey"
+      P: Phys=rk805_pwrkey/input0
+      S: Sysfs=/devices/platform/ff180000.i2c/i2c-0/0-0020/rk805-pwrkey.2.auto/input/input0
+      U: Uniq=
+      H: Handlers=kbd event0 
+      B: PROP=0
+      B: EV=3
+      B: KEY=10000000000000 0
+
+    I: Bus=0019 Vendor=0001 Product=0001 Version=0100
+      N: Name="adc-keys"
+      P: Phys=adc-keys/input0
+      S: Sysfs=/devices/platform/adc-keys/input/input1
+      U: Uniq=
+      H: Handlers=kbd event1 
+      B: PROP=0
+      B: EV=3
+      B: KEY=c000000000000 0
+
+    I: Bus=0019 Vendor=484b Product=1101 Version=0100
+      N: Name="retrogame_joypad"
+      P: Phys=rocknix-singleadc-joypad/input0
+      S: Sysfs=/devices/platform/rocknix-singleadc-joypad/input/input2
+      U: Uniq=
+      H: Handlers=js0 event2 
+      B: PROP=0
+      B: EV=20000b
+      B: KEY=f00000000 0 0 0 7fdb000000000000 0 0 0 0
+      B: ABS=1b
+      B: FF=107030000 0
+
+  /dev/input/js0 -> retrogame_joypad
+  by-path: platform-adc-keys-event platform-ff180000.i2c-platform-rk805-pwrkey.2.auto-event platform-rk817-sound-event platform-rocknix-singleadc-joypad-event-joystick platform-rocknix-singleadc-joypad-joystick 
+== wifi ==
+  addr   : wlan0            UP             192.168.0.141/24 metric 10 fe80::927a:daff:febe:ba32/64 
+  link   : Connected to c8:5b:a0:e7:e3:7a (on wlan0) 	SSID: 360JDCWiFi-E378 	freq: 2462.0 
+  regdom : country 00: DFS-UNSET
+  scan   : 9 networks in 8 s
+  route  : default via 192.168.0.1 dev wlan0 proto dhcp src 192.168.0.141 metric 10 
+  units  : service=inactive wpa=active timer=active
+== services (every r36-* unit, name-agnostic) ==
+  r36-audio.service         enabled  enabled
+  r36-backlight.service     enabled  enabled
+  r36-bootlog.service       enabled  enabled
+  r36-fwswap.service        enabled  enabled
+  r36-keymapper.service     enabled  enabled
+  r36-resize-root.service   enabled  enabled
+  r36-status-screen.service enabled  enabled
+  r36-usb-gadget.service    disabled enabled
+  r36-wifi-setup.service    enabled  enabled
+  r36-wpa@.service          indirect enabled
+  r36-bootlog.timer         enabled  enabled
+  r36-wifi-setup.timer      enabled  enabled
+  active now:
+      r36-audio.service         loaded active   exited  r36max2 audio defaults (amp mux + usable volume)
+      r36-backlight.service     loaded active   exited  Force R36 Max 2 backlight to maximum early in boot
+      r36-bootlog.service       loaded inactive dead    r36max2 status report to the BOOT partition
+      r36-fwswap.service        loaded active   exited  r36max2 AIC firmware override from the BOOT partition (inert without BOOT:\use-boot-fw)
+      r36-resize-root.service   loaded inactive dead    r36max2 grow root filesystem after partition expansion
+      r36-status-screen.service loaded active   running r36max2 status page on tty3 (redrawn every 45s)
+      r36-wifi-setup.service    loaded inactive dead    Apply BOOT:\wifi.txt to wpa_supplicant (no keyboard on this board)
+      r36-wpa@wlan0.service     loaded active   running r36max2 WPA supplicant on wlan0
+      r36-bootlog.timer         loaded active   waiting r36max2 periodic status report
+      r36-wifi-setup.timer      loaded active   waiting Re-check BOOT:\wifi.txt once a minute (so editing it on Windows is enough)
+  weston (must NOT be active): inactive
+  failed units: 0
+== storage ==
+  /dev/mmcblk1p2   58G  6.1G   52G  11% /
+  NAME          SIZE TYPE MOUNTPOINT
+  mmcblk0       3.7G disk 
+  ├─mmcblk0p1     4M part 
+  ├─mmcblk0p2     4M part 
+  ├─mmcblk0p3   1.5G part 
+  └─mmcblk0p4   2.2G part 
+  mmcblk0boot0    2M disk 
+  mmcblk0boot1    2M disk 
+  mmcblk1      58.2G disk 
+  ├─mmcblk1p1   112M part 
+  └─mmcblk1p2  58.1G part /
+== EmulationStation ==
+  /usr/local/bin/emulationstation    absent
+  /usr/bin/emulationstation          absent
+  /root/es/emulationstation          117246560 B
+  launcher : 10427 B
+  /etc/emulationstation : 
+  ~/.emulationstation   : collections es_input.cfg es_input.cfg.pre-sticknav es_launch_stderr.log es_launch_stdout.log es_log.0.txt es_log.1.txt es_log.2.txt es_log.3.txt es_log.txt es_settings.cfg es_systems.cfg es_systems.cfg.bak recovery themes tmp 
+  themes                : /root/.emulationstation/themes/art-book-next 
+  es running            : 0
+0
+== dmesg red flags ==
+  [    2.192686] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2
+  (AICWFDBG(LOGERROR) patch_tbl lines are normal chatter from this driver and are filtered out)
+  aic LOGERROR-count: 96
+# done 2026-10-04T20:44:50+08:00 - read-only, nothing was written to the device
+ part 
+  ├─mmcblk0p3   1.5G part 
+  └─mmcblk0p4   2.2G part 
+  mmcblk0boot0    2M disk 
+  mmcblk0boot1    2M disk 
+  mmcblk1      58.2G disk 
+  ├─mmcblk1p1   112M part 
+  └─mmcblk1p2  58.1G part /
+== EmulationStation ==
+  /usr/local/bin/emulationstation    absent
+  /usr/bin/emulationstation          absent
+  /root/es/emulationstation          117246560 B
+  launcher : 10427 B
+  /etc/emulationstation : 
+  ~/.emulationstation   : collections es_input.cfg es_input.cfg.pre-sticknav es_launch_stderr.log es_launch_stdout.log es_log.0.txt es_log.1.txt es_log.2.txt es_log.3.txt es_log.txt es_settings.cfg es_systems.cfg es_systems.cfg.bak recovery themes tmp 
+  themes                : /root/.emulationstation/themes/art-book-next 
+  es running            : 0
+0
+== dmesg red flags ==
+  [    2.192686] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2
+  (AICWFDBG(LOGERROR) patch_tbl lines are normal chatter from this driver and are filtered out)
+  aic LOGERROR-count: 96
+# done 2026-10-04T20:44:50+08:00 - read-only, nothing was written to the device
