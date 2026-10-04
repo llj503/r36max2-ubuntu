@@ -249,6 +249,10 @@ SUDO rm -f "${MNT}/root/etc/systemd/system/network-online.target.wants/systemd-n
 # deterministic build info: SOURCE_DATE_EPOCH, not wall clock
 echo "kernel=${KVER} base=ubuntu-${OS_VERSION} apt-snapshot=${APT_SNAPSHOT} epoch=${SOURCE_DATE_EPOCH} wayland=installed-not-enabled credentials=none" \
   | SUDO tee "${MNT}/root/etc/r36max2-build-info" >/dev/null
+# the initramfs identifies the rootfs by exactly this file: no marker means it scans
+# every block device for twenty seconds and then drops to a shell inside the initrd
+SUDO test -s "${MNT}/root/etc/r36max2-build-info" ||
+  die "image: /etc/r36max2-build-info missing - the initramfs could not find this rootfs"
 [ -s "${MNT}/root/etc/machine-id" ] || SUDO truncate -s 0 "${MNT}/root/etc/machine-id"
 sync
 df -h "${LOOP}p2" | tail -1 | awk '{print "  root partition: size="$2" used="$3" avail="$4" use%="$5}'
