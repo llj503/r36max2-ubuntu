@@ -253,6 +253,7 @@ done
 #    service list never included them.  Absence from a log is not evidence: presence
 #    is asserted here.  rootfs-apt meanwhile linked r36-audio.service, a unit nobody
 #    ships, i.e. a dangling wants symlink -> a not-found unit at boot.
+units_ok=1
 for want in multi-user.target.wants/r36-wifi-setup.service \
             multi-user.target.wants/r36-wpa@wlan0.service \
             multi-user.target.wants/r36-status-screen.service \
@@ -267,13 +268,16 @@ for want in multi-user.target.wants/r36-wifi-setup.service \
   for base in etc usr/lib; do
     SUDO ls "${MNT}/root/${base}/systemd/system/${want}" >/dev/null 2>&1 && where="${base}"
   done
-  [ -n "${where}" ] || { v "  !! not enabled: ${want}"; fail=1; }
+  [ -n "${where}" ] || { v "  !! not enabled: ${want}"; fail=1; units_ok=0; }
 done
 # -xtype l = a symlink whose target does not exist
 dangling=$(SUDO find "${MNT}/root/etc/systemd/system" "${MNT}/root/usr/lib/systemd/system" \
                  -maxdepth 2 -xtype l 2>/dev/null | sed "s|${MNT}/root/||" | tr '\n' ' ')
-[ -z "${dangling}" ] || { v "  !! dangling systemd links: ${dangling}"; fail=1; }
-v "  10 enabled units found (in /etc or /usr/lib), no dangling wants links"
+[ -z "${dangling}" ] || { v "  !! dangling systemd links: ${dangling}"; fail=1; units_ok=0; }
+# only claim success when this block actually succeeded - it used to print
+# "10 enabled units found, no dangling wants links" on the same run that listed
+# seven "!! not enabled" lines and fourteen dangling links
+[ "${units_ok}" = 1 ] && v "  10 enabled units found (in /etc or /usr/lib), no dangling wants links"
 
 # 2. every filename a boot*.ini loads must be on the FAT partition.  u-boot 2017.09
 #    resolves filenames literally; one typo is a black screen and this board has no
@@ -328,6 +332,9 @@ for f in $(SUDO ls "${MNT}/root/usr/local/bin/" 2>/dev/null); do
     || { v "  !! ${f} is not aarch64 ELF (e_machine=${machine:-unreadable})"; fail=1; }
 done
 v "  ${staged} staged ELF binaries, all aarch64"
+# zero is a failure, not a pass: /usr/local/bin is where ES, its launcher and the
+# gpu demos land, so an empty directory means nothing was merged at all
+[ "${staged}" -gt 0 ] || { v "  !! no ELF binaries staged under /usr/local/bin - the package trees were never merged into the rootfs"; fail=1; }
 
 [ "$fail" = 0 ] || { echo "!! verification FAILED - not compressing"; exit 1; }
 

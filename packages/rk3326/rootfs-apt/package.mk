@@ -220,7 +220,14 @@ UEOF
   printf 'PermitRootLogin yes\nPasswordAuthentication yes\n' \
     > "${R}/etc/ssh/sshd_config.d/99-r36.conf" ||
     die "rootfs-apt: cannot write the sshd drop-in (owner $(stat -c%U "${R}/etc/ssh/sshd_config.d"))"
-  build_msg "CLR_OK" "STEP" "5 sshd drop-in written" "indent"
+  # Ubuntu's openssh-server postinst runs inside this chroot and *generates host
+  # keys into the tree*, so an image built from it would give every card the same
+  # SSH host identity.  r36-hostkeys.service regenerates them on first boot, and
+  # the packing check asserts zero of them survive into the image.
+  rm -f "${R}"/etc/ssh/ssh_host_*
+  [ -z "$(ls "${R}"/etc/ssh/ssh_host_* 2>/dev/null)" ] ||
+    die "rootfs-apt: preseeded SSH host keys are still in the tree"
+  build_msg "CLR_OK" "STEP" "5 sshd drop-in written, preseeded host keys removed" "indent"
 
   mkdir -p "${R}/etc/wpa_supplicant" "${R}/etc/systemd/network"
   # no credentials in the image: BOOT:\wifi.txt is the only input channel

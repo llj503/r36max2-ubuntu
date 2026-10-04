@@ -36,7 +36,12 @@ kernel:
 	@bash scripts/build linux
 
 image:
-	@bash scripts/build image
+	# scripts/install is the driver, not scripts/build: it builds each package into
+	# its own install_pkg/<name>-<version> dir AND merges it into ${BUILD}/image/system.
+	# Calling scripts/build here produced a tree with no modules, no /usr/local/bin and
+	# no unit files at all - every package was built and then thrown away, and the
+	# packing self-check was the only thing that could see it.
+	@bash scripts/install image
 	@bash scripts/image
 
 clean-%:
