@@ -219,6 +219,15 @@ setup_pkg_config_target() {
   export PKG_CONFIG="$TOOLCHAIN/bin/pkg-config"
   export PKG_CONFIG_PATH=""
   export PKG_CONFIG_LIBDIR="$SYSROOT_PREFIX/usr/lib/pkgconfig:$SYSROOT_PREFIX/usr/share/pkgconfig"
+  # this sysroot is a mirror of Ubuntu's tree, which is multiarch - the .pc files
+  # are in usr/lib/<triple>/pkgconfig and lib/<triple>/pkgconfig, so a plain
+  # usr/lib/pkgconfig list finds nothing and every pkg-config probe fails with
+  # "Package gbm was not found ... required by 'virtual:world'".  glob rather
+  # than hard-code the triple, and skip the dirs that are not there.
+  local ma
+  for ma in ${SYSROOT_PREFIX}/usr/lib/*/pkgconfig ${SYSROOT_PREFIX}/lib/*/pkgconfig; do
+    [ -d "${ma}" ] && export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR}:${ma}"
+  done
   export PKG_CONFIG_SYSROOT_BASE="$BUILD"
   export PKG_CONFIG_SYSROOT_DIR="$SYSROOT_PREFIX"
   export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
@@ -441,6 +450,13 @@ setup_toolchain() {
       export CPPFLAGS="$TARGET_CPPFLAGS"
       export CFLAGS="$TARGET_CFLAGS"
       export CXXFLAGS="$TARGET_CXXFLAGS"
+      # ld resolves a shared library's OWN DT_NEEDED entries through -rpath-link and
+      # the default search dirs - the -L that pkg-config puts on the line does not
+      # count.  this sysroot is a mirror of Ubuntu's multiarch tree, so every real .so
+      # lives in usr/lib/<triple>; without these, linking anything against -lEGL fails
+      # with "libGLdispatch.so.0, needed by libEGL.so, not found" and then a wall of
+      # "undefined reference to `__glDispatch*'".  cmake picks this up from LDFLAGS.
+      export TARGET_LDFLAGS="$TARGET_LDFLAGS -Wl,-rpath-link,${SYSROOT_PREFIX}/usr/lib/${TARGET_GCC_ARCH}-linux-gnu -Wl,-rpath-link,${SYSROOT_PREFIX}/lib/${TARGET_GCC_ARCH}-linux-gnu"
       export LDFLAGS="$TARGET_LDFLAGS"
       setup_pkg_config_target
       export CMAKE_CONF=$TOOLCHAIN/etc/cmake-$TARGET_NAME.conf
