@@ -23,12 +23,36 @@ PKG_STAMP="${KERNEL_TARGET} ${R36_DTBS}"
 
 PKG_PATCH_DIRS="board"
 
+post_unpack() {
+  # The panel driver this board needs is not upstream: it is ROCKNIX's
+  # drivers/gpu/drm/panel/panel-generic-dsi.c, vendored in packages/kernel/linux/sources/
+  # (sha256 165ee9622f5c4df37bb8e6bf940aae3f63d44147d54e6f9ce409921092153b61, GPL-2.0).
+  # This hook has to be post_unpack, not post_patch: patches run during unpack, and the
+  # first framework build died in the patch loop with "can't find file to patch" because
+  # nothing had copied this source in yet.
+  cp -f "${PKG_DIR}/sources/panel-generic-dsi.c" \
+        "${PKG_BUILD}/drivers/gpu/drm/panel/panel-generic-dsi.c" ||
+    die "linux: cannot copy the vendored panel-generic-dsi.c into ${PKG_BUILD}"
+}
+
 post_patch() {
-  # carry the rocknix generic-dsi panel driver (vendored in sources/, adapted
-  # to the 7.x DRM API by patches/board/0001) into the build
-  if [ ! -e ${PKG_BUILD}/drivers/gpu/drm/panel/panel-generic-dsi.c ]; then
-    die "linux: panel-generic-dsi.c missing after unpack - sources overlay broken?"
-  fi
+  [ -e ${PKG_BUILD}/drivers/gpu/drm/panel/panel-generic-dsi.c ] ||
+    die "linux: panel-generic-dsi.c missing after unpack - post_unpack broken?"
+  # no Kconfig symbol, no build: linux.aarch64.conf sets
+  # CONFIG_DRM_PANEL_GENERIC_DSI=y, and `make olddefconfig` silently DROPS a setting
+  # with no matching symbol - the same way CONFIG_INPUT_POLLDEV disappeared from the
+  # hand-built tree and left the joypad failing at modpost. A dropped panel symbol
+  # would mean a black panel, which on this board is not debuggable over a console.
+  grep -q DRM_PANEL_GENERIC_DSI ${PKG_BUILD}/drivers/gpu/drm/panel/Kconfig ||
+    cat >> ${PKG_BUILD}/drivers/gpu/drm/panel/Kconfig <<'KCONFIG'
+
+config DRM_PANEL_GENERIC_DSI
+	tristate "Generic DSI panel with a textual panel_description"
+	depends on OF && MIPI_DSI
+	help
+	  Carried over from ROCKNIX: matches a DSI panel by the init sequence
+	  description string in the DT instead of a hard-coded panel list.
+KCONFIG
   grep -q panel-generic-dsi ${PKG_BUILD}/drivers/gpu/drm/panel/Makefile || \
     echo 'obj-$(CONFIG_DRM_PANEL_GENERIC_DSI) += panel-generic-dsi.o' >> ${PKG_BUILD}/drivers/gpu/drm/panel/Makefile
 
