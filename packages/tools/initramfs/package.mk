@@ -84,6 +84,10 @@ EOF
     > ${PKG_BUILD}/initrd.cpio.gz
   mkimage -A arm64 -O linux -T ramdisk -C gzip -n "uInitrd-r36max2" \
     -d ${PKG_BUILD}/initrd.cpio.gz ${INSTALL}/.image/uInitrd >/dev/null
+  # Image/dtb are NOT staged here: scripts/image copies them straight from the
+  # linux package's install dir, so what boots is what the modules were built for.
   gzip -dc ${PKG_BUILD}/initrd.cpio.gz | cpio -t --quiet 2>/dev/null | grep -qE "^init$" \
     || die "initramfs: init missing from the archive"
+  gzip -dc ${PKG_BUILD}/initrd.cpio.gz | cpio -t --quiet 2>/dev/null | grep -qE "bin/busybox" \
+    || die "initramfs: busybox missing from the archive"
 }

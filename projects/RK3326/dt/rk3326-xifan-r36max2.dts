@@ -421,9 +421,19 @@
 	};
 };
 
-&dmc {
-	center-supply = <&vdd_logic>;
-};
+/* The vendor &dmc node (compatible "rockchip,px30-dmc") is not in a mainline
+ * rk3326.dtsi and nothing binds it: no drivers/devfreq/rockchip_dmc.c in 6.12.79 or
+ * 7.2.8, /sys/class/devfreq on the board lists only ff400000.gpu, lsmod has no dmc
+ * module, and DDR timings come from the vendor idbloader - not from this dtb.
+ * It was inherited from the 6.12-LTS layer, so the 7.2.8 dtb could not compile.
+ *
+ * Checked by decompiling the booting v20 dtb and diffing node sets. Differences are:
+ *   - the inert dmc / dfi@ff610000 / dmc_opp_table subtree (194-528 MHz)  removed
+ *   - opp-1416000000, which never took effect: the board reports
+ *     scaling_available_frequencies = "1008000 1296000", cpuinfo_max_freq=1296000
+ *   - mainline's own cpu opp table adds 600/816/1200 MHz steps and adds cpuinfo
+ *     (cpu-id nvmem); 1296000000 - what this board actually runs at - is still there,
+ *     and the governor is performance, so the extra steps do not change behaviour. */
 
 &cpu0 {
 	cpu-supply = <&vdd_arm>;

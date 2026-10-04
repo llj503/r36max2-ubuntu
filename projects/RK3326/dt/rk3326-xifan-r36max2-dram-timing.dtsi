@@ -266,6 +266,6 @@
 	};
 };
 
-&dmc {
-	ddr_timing = <&r36max2_ddr_timing>;
-};
+/* No &dmc node exists in a mainline rk3326.dtsi (see the note in
+ * rk3326-xifan-r36max2.dts), so the timing data below is kept as the record of what
+ * the vendor idbloader applies, not as a live Linux devfreq configuration. */

@@ -22,7 +22,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核 
 | 项目 | 状态 | 证据 / 详见 |
 | --- | --- | --- |
 | 引导（TF 卡双启动，eMMC 原样保留） | ✅ | u-boot 2017.09 → `boot.ini` → `booti` |
-| 主线内核 6.12.79 + 板级 dtb | ✅ | [`projects/RK3326/dt/`](projects/RK3326/dt/)，另见 [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
+| 主线内核 7.2.9 + 板级 dtb（v21 起镜像里只有它） | ✅ | [`projects/RK3326/dt/`](projects/RK3326/dt/)，6.12.79 那条线见 [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
 | 屏 / 背光 / 控制台 | ✅ | DSI 1024x768@60，fbcon 正常 |
 | systemd + 网络 + SSH | ✅ | 40 秒内拿到 DHCP 地址 |
 | WiFi（AIC8800DC，USB，chip_sub_id=2） | ✅ | 关联 -47 dBm，rx65/tx78 MBit/s |
@@ -32,7 +32,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核 
 | Wayland 图形会话（weston 14） | ⚠️ 起得来、能合成；VOP 会丢 vblank —— 有时永久卡死（只能重启），有时只是间歇 WARN 而画面仍可操作 | [WAYLAND.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md) |
 | 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对；但**跑 ES 时要停桥**（抢设备） | [JOYPAD-BRIDGE.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/JOYPAD-BRIDGE.md) |
 | 虚拟键盘（`r36-osk`：uinput + wofi 网格） | ✅ 按键流已无人值守逐事件验证；点击那一步要屏幕能用 | [OSK.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/OSK.md) |
-| EmulationStation（batocera 分支，桌面 GL） | ✅ 编出 117 MB 二进制，weston 里起窗口、列表、**启动回路实测跑通**；摇杆导航待眼睛确认 | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
+| EmulationStation（batocera 分支，桌面 GL） | ✅ 117 MB 二进制，**不需要 weston**：`r36-es --kmsdrm` 下目视确认出画面、摇杆切条目方向正确；22 秒窗口内内核 stall 计数 0→0 | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
@@ -56,7 +56,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核 
 | weston 会话、截图为什么拿不到、vblank 卡死 | [WAYLAND.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md) |
 | 摇杆当键鼠、屏上键盘 | [JOYPAD-BRIDGE.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/JOYPAD-BRIDGE.md)、[OSK.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/OSK.md) |
 | 1 GB 内存上编出并跑起 EmulationStation | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
-| 6.12.79 与 7.2.8 双内核怎么共存、切换、打哪些补丁 | [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
+| 7.2.8 怎么打上 ROCKNIX 的补丁层、6.12.79 那条线去哪了 | [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
 | 换网络 / 交给别人用（不带凭据的镜像） | [WIFI-AND-SHARING.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md) |
 | 还没解决的问题 | [KNOWN-ISSUES.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KNOWN-ISSUES.md) |
 | 许可、第三方来源、默认口令风险 | [LICENSING.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/LICENSING.md)、[SECURITY.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/SECURITY.md) |

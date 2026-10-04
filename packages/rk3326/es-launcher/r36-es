@@ -79,6 +79,10 @@ bridge_off() {
 
 bridge_on() {
     [ "$(systemctl is-active $BRIDGE 2>/dev/null)" = active ] && { echo "  bridge already active"; return 0; }
+    # Restore only what was actually running. The unit is BindsTo=weston.service, so a
+    # blind `systemctl start` here would also start the compositor - which is precisely
+    # what --kmsdrm is trying to avoid (weston on 7.2.8 can wedge the VOP permanently).
+    [ "$BRIDGE_WAS" = active ] || { echo "  bridge was $BRIDGE_WAS before ES ran, leaving it off"; return 0; }
     systemctl start $BRIDGE 2>/dev/null
     sleep 2
     echo "  joypad bridge back $(systemctl is-active $BRIDGE) (stick=mouse, keys=keyboard for desktop apps)"
@@ -91,7 +95,7 @@ watch_bridge() {
     # never notice ES going away.
     setsid sh -c '
         while pgrep -c emulationstatio >/dev/null 2>&1; do sleep 5; done
-        systemctl start '"$BRIDGE"' 2>/dev/null
+        [ "'"$BRIDGE_WAS"'" = active ] && systemctl start '"$BRIDGE"' 2>/dev/null
     ' >/dev/null 2>&1 &
 }
 
@@ -124,7 +128,7 @@ case "${1:-run}" in
         find_es || exit 1
         echo "  es binary : $ES ($(stat -c %s "$ES") bytes, built $(stat -c %y "$ES" | cut -c1-19))"
         echo "  weston    : $(systemctl is-active weston)  socket=$([ -S $RT/$SOCK ] && echo yes || echo no)"
-        echo "  es procs  : $(pgrep -a -f "$ES" | head -3 | tr '\n' ' ')"
+        echo "  es procs  : $(pgrep -a emulationstatio 2>/dev/null | head -3 | tr '\n' ' ')"
         echo "  bridge    : $(systemctl is-active $BRIDGE)  (should be inactive while ES runs, active otherwise)"
         echo "  pad readers: $(for p in $(ls /proc | grep -E '^[0-9]+$'); do ls -l /proc/$p/fd 2>/dev/null | grep -q 'input/event2' && printf '%s:%s ' $(cat /proc/$p/comm 2>/dev/null) $p; done)"
         echo "  roms      : $(ls /root/roms 2>/dev/null | head -6 | tr '\n' ' ')"

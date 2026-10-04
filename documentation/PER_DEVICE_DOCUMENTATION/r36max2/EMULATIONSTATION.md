@@ -98,3 +98,41 @@ Python 的 `ElementTree` 不过 —— **"我的解析器报错"不等于"文件
 - 抓包侧同理：桥抢占设备时 `evtest` 打在摇杆节点上只有 capability 头、**0 个事件**，别当成
   "摇杆没信号"；要看原始 `BTN_*` 必须先停桥（`tools/input/diagnostics/evcap.sh` 现在同时抓 4 个节点，
   uinput 那两个按设备名解析）。
+
+---
+
+# 不靠 weston 跑 ES：`r36-es --kmsdrm`（2026-10-04 实测）
+
+`--kmsdrm` 让 ES 通过 SDL 的 KMS/DRM 后端**自己当 DRM master**，全屏直出，不需要合成器。
+它做的事：weston 在跑就先停并等它真正放手（最多 40 秒，用 `fuser /dev/dri/card0` 确认，
+还在就**拒绝启动**，否则 SDL 会阻塞在 `drmSetMaster` 上、看起来像内核挂了）；停掉键鼠桥；
+`chvt 1` 拿回控制台；设 `SDL_VIDEODRIVER=kmsdrm`、`unset WAYLAND_DISPLAY XDG_RUNTIME_DIR`；
+ES 退出后把桥恢复回去。
+
+这条路的价值在于**绕开 weston 那一层**：省掉常驻 ~53 MB，也不走 weston 特有的
+`does not support Atomic async page flip` → `drm_atomic_helper_commit_tail_rpm` 同步等 vblank
+那条路。但注意它不是零风险：ES 自己照样翻页，同一个 VOP 的 stall 只是不再"由合成器触发"，
+没被证明不存在。
+
+**实测数据**（22 秒窗口，`timeout 22 r36-es --kmsdrm`，板子 7.2.8、可用内存 726 MB）：
+
+| 指标 | 结果 |
+| --- | --- |
+| ES 进程 | 第 8 秒 `pgrep -c emulationstatio` = **1**，跑满窗口 |
+| 退出原因 | `rc=124`（timeout 到点杀的，不是自己崩） |
+| 内核 stall 计数 | 启动前 `0`，结束后 **`0`** —— `dmesg \| grep -c 'timed out'` 无增量 |
+| 结束后的服务 | `weston=inactive`、`r36-keymapper=inactive`（都没被拉起来） |
+| 控制台 | `vtcon1/bind=1`，fbcon 回来了 |
+| ES 日志里唯一的错误 | `HttpReq::onError (3): Could not connect to server` —— ES 自己的联网请求；这块板子的 `resolv.conf` 还烧着旧网关 `192.168.31.1`，出网本来就不通，与渲染无关 |
+
+没有 `Failed to initialize renderer` / SDL 初始化失败那类行，说明它过了渲染后端初始化进了主循环。
+**屏上真的画出了 ES，摇杆能移动光标、能切条目，方向正确**（2026-10-04 作者目视确认）。这一条
+程序侧本来就拿不到证据 —— 截图被合成器权限模型挡住，kmsdrm 下更是没有合成器可截。
+
+意义比"ES 能跑"更大一点：这台 1 GB 的板子**完全可以不开 weston** 就用摇杆操作 ES，
+于是那条 weston 会把 VOP 弄死的风险线被整条绕开了。
+
+顺手修掉一个真实缺陷（`packages/r36-emulationstation/r36-es`）：`bridge_on()` 原来是无条件
+`systemctl start r36-keymapper`，而该单元带 `BindsTo=weston.service` —— 于是 `--kmsdrm` 一退出
+就会把 weston 一起拽起来，恰好是这条路径刻意要躲的东西。现在只在"ES 启动前桥本来就在跑"
+（`BRIDGE_WAS=active`）时才恢复，`watch_bridge()` 那个后台守卫同样加了这层判断。
