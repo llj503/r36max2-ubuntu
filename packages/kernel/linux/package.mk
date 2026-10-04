@@ -25,12 +25,16 @@ PKG_PATCH_DIRS="board"
 
 post_unpack() {
   # The panel driver this board needs is not upstream: it is ROCKNIX's
-  # drivers/gpu/drm/panel/panel-generic-dsi.c, vendored in packages/kernel/linux/sources/
+  # drivers/gpu/drm/panel/panel-generic-dsi.c, vendored right here next to the recipe
   # (sha256 165ee9622f5c4df37bb8e6bf940aae3f63d44147d54e6f9ce409921092153b61, GPL-2.0).
-  # This hook has to be post_unpack, not post_patch: patches run during unpack, and the
-  # first framework build died in the patch loop with "can't find file to patch" because
-  # nothing had copied this source in yet.
-  cp -f "${PKG_DIR}/sources/panel-generic-dsi.c" \
+  # Two traps, both hit today:
+  #   * it must be copied in during UNPACK, not post_patch - the board patches run in
+  #     between, and "can't find file to patch: .../panel-generic-dsi.c" was the result;
+  #   * it must not live in a directory named sources/: .gitignore has a bare
+  #     `sources/` rule for the download cache, which silently matched
+  #     packages/kernel/linux/sources/ and left the file untracked, so the next clone
+  #     had no such file at all.  Beside package.mk cannot be swallowed by that rule.
+  cp -f "${PKG_DIR}/panel-generic-dsi.c" \
         "${PKG_BUILD}/drivers/gpu/drm/panel/panel-generic-dsi.c" ||
     die "linux: cannot copy the vendored panel-generic-dsi.c into ${PKG_BUILD}"
 }
