@@ -49,6 +49,56 @@ rm -rf "${R}/run/"* "${R}/tmp/"* 2>/dev/null || true
 # modules_install leaves build/source symlinks into the multi-GB kernel tree;
 # shipping them means a dangling symlink on every card
 for kv in "${R}"/lib/modules/*; do rm -f "${kv}/build" "${kv}/source" 2>/dev/null || true; done
+
+# Ubuntu is merged-usr: /lib is a symlink to usr/lib, and every wants link the
+# distro's own postinsts wrote says /lib/systemd/system/<unit>.  The staging tree
+# grew a REAL /lib here (the kernel and wifi packages install lib/modules and
+# lib/firmware), which silently broke fifteen of those links - among them
+# ssh.service and ssh.socket, so the board would have had no SSH on first boot and
+# systemd would have logged fifteen not-found units.  Put the layout back.
+if [ -d "${R}/lib" ] && [ ! -L "${R}/lib" ]; then
+  for d in modules firmware; do
+    [ -d "${R}/lib/${d}" ] || continue
+    if [ -e "${R}/usr/lib/${d}" ]; then
+      # both exist: a previous pack already moved this under usr/lib, and the merge
+      # tar recreated a real /lib on top of the symlink.  A plain `mv` would drop it
+      # in as usr/lib/modules/modules and the kernel would boot with no modules at
+      # all, so merge the contents instead.
+      SUDO cp -a "${R}/lib/${d}/." "${R}/usr/lib/${d}/" ||
+        die "image: cannot merge /lib/${d} into usr/lib/${d}"
+      SUDO rm -rf "${R}/lib/${d}"
+    else
+      SUDO mv "${R}/lib/${d}" "${R}/usr/lib/" || die "image: cannot move /lib/${d} under usr/lib"
+    fi
+  done
+  SUDO rmdir "${R}/lib" 2>/dev/null || { ls -A "${R}/lib" 2>/dev/null | sed 's/^/      leftover: /'; die "image: /lib still holds something - refusing to replace it with a symlink"; }
+  SUDO ln -sfn usr/lib "${R}/lib"
+fi
+
+# Now sweep unit links that are broken *inside the image*.  A wants link to a unit
+# that does not exist is a not-found unit at boot, and Ubuntu 26.04 ships no
+# sshd-keygen.service while four *.wants/ directories still reference it.
+# Links to /dev/null are systemd's masking idiom and are left alone.
+swept=0
+for l in $(find "${R}/etc/systemd/system" "${R}/usr/lib/systemd/system" -maxdepth 2 -type l 2>/dev/null); do
+  t=$(readlink "${l}")
+  [ "${t}" = "/dev/null" ] && continue
+  case "${t}" in
+    /*) [ -e "${R}${t}" ] && continue ;;
+    *)  [ -e "$(dirname "${l}")/${t}" ] && continue ;;
+  esac
+  echo "      removing broken unit link: ${l#${R}/} -> ${t}"
+  SUDO rm -f "${l}" && swept=$((swept + 1))
+done
+if [ -L "${R}/lib" ]; then
+  echo "  merged-usr /lib -> $(readlink "${R}/lib")"
+else
+  # hard stop, not fail=1: the shared flag is initialised to 0 much later (in [6]),
+  # which would silently erase an assertion set here.
+  echo "  /lib is STILL A DIRECTORY - the merged-usr symlink was not established"
+  die "image: /lib must be a symlink to usr/lib, or fifteen unit links break on the card"
+fi
+echo "  broken unit links removed: ${swept}"
 echo "  rootfs size: $(SUDO du -sh "${R}" | cut -f1)"
 echo "  free: $(df -h . | tail -1 | awk '{print $4}')"
 
@@ -231,6 +281,7 @@ hk=$(SUDO ls "${MNT}/root/etc/ssh/ssh_host_"* 2>/dev/null | wc -l)
 v "ssh host keys in image: $hk (must be 0)"
 [ "$hk" = 0 ] || fail=1
 SUDO ls "${MNT}/root/etc/systemd/system/multi-user.target.wants/r36-hostkeys.service" >/dev/null 2>&1 \
+  || SUDO ls "${MNT}/root/usr/lib/systemd/system/multi-user.target.wants/r36-hostkeys.service" >/dev/null 2>&1 \
   || { v "  !! host-key regen unit not enabled"; fail=1; }
 v "machine-id: $([ -s "${MNT}/root/etc/machine-id" ] && echo NON-EMPTY || echo empty)"
 [ -s "${MNT}/root/etc/machine-id" ] && fail=1
@@ -270,10 +321,23 @@ for want in multi-user.target.wants/r36-wifi-setup.service \
   done
   [ -n "${where}" ] || { v "  !! not enabled: ${want}"; fail=1; units_ok=0; }
 done
-# -xtype l = a symlink whose target does not exist
-dangling=$(SUDO find "${MNT}/root/etc/systemd/system" "${MNT}/root/usr/lib/systemd/system" \
-                 -maxdepth 2 -xtype l 2>/dev/null | sed "s|${MNT}/root/||" | tr '\n' ' ')
-[ -z "${dangling}" ] || { v "  !! dangling systemd links: ${dangling}"; fail=1; units_ok=0; }
+# a link whose target does not exist *inside the image*.  `find -xtype l` cannot
+# express that: it resolves an absolute symlink against the build host's /, so every
+# /lib/systemd/system/... link in a mounted rootfs looked broken and the check cried
+# wolf at thirteen healthy links.  Test each target the way the device's systemd will:
+# absolute targets against the mounted root, relative ones against their own directory.
+dangling=""
+for l in $(SUDO find "${MNT}/root/etc/systemd/system" "${MNT}/root/usr/lib/systemd/system" \
+                   -maxdepth 2 -type l 2>/dev/null); do
+  t=$(SUDO readlink "${l}")
+  # a link to /dev/null IS the mask - systemd's own idiom, not a broken link
+  [ "${t}" = "/dev/null" ] && continue
+  case "${t}" in
+    /*) SUDO test -e "${MNT}/root${t}" || dangling+=" ${l#${MNT}/root/}->${t}" ;;
+    *)  SUDO test -e "$(dirname "${l}")/${t}" || dangling+=" ${l#${MNT}/root/}->${t}" ;;
+  esac
+done
+[ -z "${dangling}" ] || { v "  !! links that break inside the image:${dangling}"; fail=1; units_ok=0; }
 # only claim success when this block actually succeeded - it used to print
 # "10 enabled units found, no dangling wants links" on the same run that listed
 # seven "!! not enabled" lines and fourteen dangling links
