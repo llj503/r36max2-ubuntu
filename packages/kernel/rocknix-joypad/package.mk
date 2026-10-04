@@ -7,7 +7,7 @@
 # the xifan vibrator additions, then the gpiod conversion.
 #
 # The gpiod conversion MUST pair with the DT polarity flags in
-# projects/r36max2/dt/rk3326-xifan-r36max2.dts: amux-a ACTIVE_HIGH,
+# projects/RK3326/dt/rk3326-xifan-r36max2.dts: amux-a ACTIVE_HIGH,
 # amux-en ACTIVE_LOW driven by logical assert, rumble ACTIVE_HIGH.
 # See documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md.
 

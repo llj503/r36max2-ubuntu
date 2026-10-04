@@ -228,6 +228,55 @@ v "modules-load.d: $(SUDO tr '\n' ' ' < "${MNT}/root/etc/modules-load.d/r36max2.
 for d in "${MNT}/boot/rk3326-xifan-r36max2.dtb"; do
   v "FAT $(basename $d) gpio flags: $(SUDO dtc -I dtb -O dts "$d" 2>/dev/null | grep -E 'rumble-gpio|amux-a-gpios' | tr -s ' \t' ' ' | tr '\n' ' ')"
 done
+
+# --- the three assertions the v20 card had to teach the hard way --------------
+# 1. wifi-setup's units must be enabled.  On the v20 card the files were on disk but in
+#    no *.wants/ directory, so systemd never ran them; the only symptom was that
+#    r36-boot.txt never mentioned them, which proves nothing because that service list
+#    never included them.  Absence from a log is not evidence - presence is asserted.
+for want in multi-user.target.wants/r36-wifi-setup.service timers.target.wants/r36-wifi-setup.timer; do
+  SUDO ls "${MNT}/root/etc/systemd/system/${want}" >/dev/null 2>&1 \
+    || { v "  !! not enabled: ${want}"; fail=1; }
+done
+v "  wifi-setup service + timer enabled"
+
+# 2. every filename a boot*.ini loads must be on the FAT partition.  u-boot 2017.09
+#    resolves filenames literally; one typo is a black screen and this board has no
+#    serial port to print the error to.
+for ini in "${MNT}/boot/boot.ini" "${MNT}/boot/boot-usbhost.ini"; do
+  [ -e "${ini}" ] || { v "  !! missing ${ini}"; fail=1; continue; }
+  for n in $(SUDO sed -n 's/^load mmc 1:1 ${[^ ]*} \([^ ]*\)$/\1/p' "${ini}" | tr -d '\r' | sort -u); do
+    SUDO ls "${MNT}/boot/${n}" >/dev/null 2>&1 \
+      || { v "  !! $(basename "${ini}") loads '${n}', which is not on the FAT"; fail=1; }
+  done
+  v "  $(basename "${ini}"): every file it loads is present"
+done
+
+# 3. EmulationStation was in no image at all before v21 - the scripts existed, the
+#    packaged rootfs did not.  Assert the launcher, the binary and both cfgs ES needs,
+#    and that the cfgs still carry this board's GUID and stick axes.
+for f in usr/local/bin/emulationstation usr/local/bin/r36-es \
+         etc/emulationstation/es_input.cfg etc/emulationstation/es_systems.cfg \
+         root/.emulationstation/es_input.cfg root/.emulationstation/es_systems.cfg; do
+  SUDO ls "${MNT}/root/${f}" >/dev/null 2>&1 || { v "  !! missing: /${f}"; fail=1; }
+done
+SUDO grep -q 'deviceGUID="19009b4d4b4800000111000000010000"' \
+     "${MNT}/root/etc/emulationstation/es_input.cfg" 2>/dev/null \
+  || { v "  !! es_input.cfg lost this board's GUID"; fail=1; }
+for axis in joystick1left joystick1up; do
+  SUDO grep -q "name=\"${axis}\"" "${MNT}/root/etc/emulationstation/es_input.cfg" 2>/dev/null \
+    || { v "  !! es_input.cfg lost the ${axis} binding (the stick cannot move the cursor)"; fail=1; }
+done
+SUDO grep -q '<system>' "${MNT}/root/etc/emulationstation/es_systems.cfg" 2>/dev/null \
+  || { v "  !! es_systems.cfg has zero systems - ES would exit or draw nothing"; fail=1; }
+v "  ES present: binary, launcher, and both cfgs with the verified GUID + stick axes"
+
+# 4. one kernel tree.  A second /lib/modules directory is how a .ko that nothing loads
+#    ends up on a card.
+trees=$(SUDO ls "${MNT}/root/lib/modules" 2>/dev/null | tr '\n' ' ')
+[ "${trees}" = "${KVER} " ] || { v "  !! /lib/modules holds: ${trees} (want ${KVER} only)"; fail=1; }
+v "  /lib/modules: ${trees}"
+
 [ "$fail" = 0 ] || { echo "!! verification FAILED - not compressing"; exit 1; }
 
 echo "=== [7] close it out and compress ==="

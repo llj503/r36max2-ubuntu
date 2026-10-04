@@ -105,6 +105,15 @@ CONF
   SUDO mount --rbind /dev "${R}/dev" 2>/dev/null || true
   SUDO mount -t proc proc "${R}/proc" 2>/dev/null || true
 
+  # Every chroot below runs arm64 binaries on an x86_64 host.  Without a binfmt
+  # handler the dpkg call fails with "Exec format error", the manifest comes back
+  # empty, and the image ships a rootfs with no sshd and no wpa_supplicant - on a
+  # board with no keyboard, no UART and no USB host that is not recoverable over the
+  # network.  Measured 2026-10-04: the rule disappears by itself when an idle WSL
+  # VM restarts, so this is checked per run rather than assumed from last time.
+  SUDO bash "${ROOT}/scripts/require-arm64.sh" "${R}" ||
+    die "rootfs-apt: this host cannot execute arm64 in a chroot (see scripts/require-arm64.sh)"
+
   build_msg "CLR_BUILD" "INSTALL" "${NDEB} debs via chroot dpkg" "indent"
   SUDO chroot "${R}" /usr/bin/env DEBIAN_FRONTEND=noninteractive \
     bash -c 'dpkg -i --force-confdef --force-confold /debs/*.deb' 2>&1 | tail -6
@@ -113,6 +122,21 @@ CONF
   mkdir -p "${R}/etc/r36max2"
   SUDO chroot "${R}" dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
     > "${R}/etc/r36max2/dpkg-manifest.txt"
+
+  # Proof the install actually happened, not just that dpkg returned 0: a rootfs
+  # without a working sshd cannot be reached, and without wpa_supplicant it cannot
+  # join a network, and there is no console on this board to discover that from.
+  local npkgs=$(wc -l < "${R}/etc/r36max2/dpkg-manifest.txt")
+  [ "${npkgs}" -gt 100 ] || die "rootfs-apt: dpkg manifest has ${npkgs} entries - nothing got installed"
+  build_msg "CLR_OK" "VERIFY" "dpkg database: ${npkgs} packages" "indent"
+  local absent=""
+  for b in sshd wpa_supplicant depmod ip; do
+    SUDO chroot "${R}" /bin/sh -c \
+      "command -v ${b} >/dev/null 2>&1 || ls /usr/sbin/${b} /usr/bin/${b} >/dev/null 2>&1" \
+      || absent="${absent} ${b}"
+  done
+  [ -n "${absent}" ] && die "rootfs-apt: not executable in the rootfs:${absent}"
+  build_msg "CLR_OK" "VERIFY" "sshd, wpa_supplicant, depmod, ip present" "indent"
 
   SUDO umount "${R}/proc" 2>/dev/null || SUDO umount -l "${R}/proc" 2>/dev/null || true
   SUDO umount -R "${R}/dev" 2>/dev/null || SUDO umount -l "${R}/dev" 2>/dev/null || true
