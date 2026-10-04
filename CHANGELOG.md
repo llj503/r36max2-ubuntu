@@ -1,86 +1,47 @@
-# R36 Max 2 (RK3326) —— 目录结构对齐 ROCKNIX/distribution
+# v21 —— 可复现构建框架(对齐 ROCKNIX/distribution)
 
-本次重排把只有一个 `build/`（446 个脚本平铺）的仓库，按角色拆开，目录命名对齐
-[ROCKNIX/distribution](https://github.com/ROCKNIX/distribution)：
+v20 的构建是"16 步手工脚本 + 作者机器上的隐形输入":14 个外部输入只有 2 个做过哈希
+校验;安装脚本从不读仓库里的 `packages/`,读的是 `/mnt/e/ubuntu/build` 下的临时拷贝;
+apt 对活动镜像实时装;打包把墙钟时间、随机 UUID、按核心数变化的 xz 压缩全部烧进镜像。
+v21 把它重写成 ROCKNIX 式框架:**先自建交叉工具链,再按 package.mk 依赖图构建,最后
+打包镜像**,任何人拿同一份仓库应能复现出同一个镜像。
 
-| 新位置 | 原来在哪 | 是什么 |
-| --- | --- | --- |
-| `projects/r36max2/dt/` | `board/` | 板级设备树与 DRAM timing |
-| `projects/r36max2/patches/` | `build/`、`build/joypad/` | 内核/驱动补丁集 |
-| `packages/<名字>/` | `build/` 里的 `r36-*`、`weston.*`、`es-input-*.cfg` | 装进 rootfs、跑在板子上的程序与 systemd 单元 |
-| `scripts/` | `build/` | 宿主机流水线：取内核、打补丁、编译、装 rootfs、打包镜像 |
-| `tools/<子系统>/{diagnostics,runtime,verify}/` | `build/` | 调试仪器。只读观测 / 改变板子状态 / 通过-失败判定 |
-| `config/rootfs/` | `build/99-r36-power.conf` | 直接落进 rootfs 的配置 |
-| `distributions/` | `out/*.sha256` | 每一版镜像的 sha256 与发布记录 |
-| `documentation/PER_DEVICE_DOCUMENTATION/r36max2/` | 根目录与 `out/` 的 `.md`、`shots/` | 移植方案、刷写与首启、上传步骤、验收图 |
-| `archive/` | `build/` | 被取代的历史版本，见下 |
+## 构建模型(替换 v20 的 16 步手工流水线)
 
-## 兼容性处理
+| v20 | v21 |
+| --- | --- |
+| 手工解包内核 tarball(无 URL 无哈希) | `packages/kernel/linux/package.mk` pin 7.2.9 + SHA256,`scripts/get` 强制校验 |
+| `/root/r36` + `/mnt/e/ubuntu` 硬编码路径 | 一切路径来自 `config/path`(`make build PKG=...`) |
+| 用作者宿主机的 aarch64 gcc | binutils 2.44 + gcc 15.1.0 自建进 `build.*/toolchain`,sysroot 由 ubuntu-base + pinned -dev deb 填充 |
+| `build-rootfs.sh` 实时 apt(aliyun 镜像) | `r36-rootfs-apt` 对 **snapshot.ubuntu.com 固定时间点**安装,dpkg 清单随镜像发布 |
+| `packages/` 是摆设,脚本读 `/mnt/e` 拷贝 | 13 个设备包全部从 `packages/<名>/` 安装,仓库是唯一来源 |
+| `pack-v20.sh` 烧入 `date -Is`/随机 UUID/`xz -T0` | 固定 volid/UUID、`SOURCE_DATE_EPOCH`(= HEAD 提交时间)、`cpio --reproducible`、`xz -T1` |
+| WiFi 凭据默认烤入(`R36_BAKE_WIFI=1`) | **永不烤入**,BOOT:\wifi.txt 是唯一配网通道;resolv.conf 只留公共 DNS(v20 硬编码作者家路由) |
+| ES 在 1 GB 板子上编(-O1 降级、两阶段冒烟) | ES + 主题按 rev+sha256 锁定交叉编译进镜像 |
 
-- 477 个文件用 `git mv` 移动，历史可追。
-- 脚本与文档里 **171 处** 指向旧目录的路径引用被自动改写（`build/x`、`/mnt/e/ubuntu/build/x`、
-  `board/x`、`out/x`、`shots/x` 五类），只有确实对应"已移动的被跟踪文件"才改写；README 里
-  5 处通配写法（`build/v20-*.sh` 这类）手工修正。
-- `.gitattributes` 的 linguist 条目、`.gitignore` 的忽略规则跟着新路径更新。
-- 全部脚本过语法检查（`make lint` → `scripts/lint.sh`：373 个 shell、36 个 python，0 失败）。
-- 新增 `make lint` 与 `.github/workflows/lint.yml`：CI 只做语法与目录约定检查，
-  真正的构建需要 WSL + aarch64 交叉工具链 + 一块真机，不适合放进 Actions。
-- 未被改写的两类路径是**故意的**：
-  1. `build/` 仍然是脚本的本机 scratch 目录（第三方源码、CMake 中间产物、`wifi-cred.txt`），
-     只是不再存放仓库文件；
-  2. `/mnt/e/ubuntu` 是原作者构建机上的盘符，换机器请自行替换；`archive/` 里的一次性脚本
-     没有逐条改写它们写死的输出目录。
+入口:`make checkdeps → make source → make build image → make image`。
+唯一需要 sudo 的是 chroot apt 一步。详见 [BUILD.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/BUILD.md)。
 
-## README 拆分（同一天的第二步）
+## 输入清单(全部锁定,写在各自 package.mk)
 
-README 原本 640 行，把所有移植细节堆在一个文件里。按 ROCKNIX 的做法（短首页 +
-`documentation/PER_DEVICE_DOCUMENTATION/<设备>/` 放正文）拆成：
+linux-7.2.9(kernel.org)、busybox 1.38.0、rocknix-joypad@7f3272ff(AveyondFly,
+joypad-gpiod 补丁仍由本仓维护)、aic8800@5.0+git20260123.5f7be68d-9(radxa-pkg,
+7.2.8 兼容补丁实测干净应用)、aic8800DC 固件@4.0+git20250410.b99ca8b6-5(上游 5.0 起
+删了 8800DC 的 .bin,固件单独 pin)、ubuntu-base 26.04.1(cdimage SHA256)、
+emulationstation-next@cada856d(ROCKNIX,v20 真机校验过的同一 tarball)、
+art-book-next-es@9a50ef36(同 v20 主题 pin)。厂商 u-boot 三 blob 不可分发,
+`scripts/extract-vendor-blobs.sh` 从现成 ArkOS 卡 dd 出来,哈希记录后强校验。
 
-- `README.md` 91 行：简介、状态表、文档索引、目录结构。
-- `documentation/PER_DEVICE_DOCUMENTATION/r36max2/` 新增 14 篇主题文档：
-  `HARDWARE` `BUILD` `FLASH` `DEBUGGING` `GPU` `WAYLAND` `JOYPAD-BRIDGE` `OSK`
-  `EMULATIONSTATION` `WIFI-AND-SHARING` `KERNELS` `KNOWN-ISSUES` `LICENSING` `SECURITY`（`.md`）。
+## 其它变化
 
-拆分是**逐字节切片**，没有改写或概括任何一段正文；只有三类改动：标题从 `##` 升为 `#`、
-图片链接改成同目录的 `images/001.jpg`、以及"见上一节/见下文"这类相对指向改成跨文件链接。
-指向 README 章节的其它引用（`Makefile`、`archive/README.md`、`distributions/README.md`、
-`scripts/pack-v20.sh`、`scripts/apply-wayland.sh`）跟着改指主题文档。
-
-顺手修掉两个既有坏链：`刷写与首启说明.md` 里指向已不存在的 `out/` 的链接，以及一个写死
-`/E:/ubuntu/...` 的本地路径链接（改为指向 `distributions/` 的校验记录）。全仓 markdown
-链接检查：0 坏链。
-
-## 只保留当前一套（第三步）
-
-把"活跃目录里同时摆着 v8 到 v20 每一代脚本"的状态收干净：**删掉 363 个文件，仓库从 503 个
-降到 140 个**。删除只发生在工作树，历史完整 —— 任意文件可用 `git show 6dd081a:<路径>` 取回，
-删除清单见 `git log --diff-filter=D --name-only`。
-
-删掉的是：`archive/` 全部（84）、`tools/` 里没被文档点名的 204 个一次性探测脚本、
-`scripts/` 里 75 个不属于当前流水线的脚本（含 v19 的打包器 `pack-v10.sh`）。
-
-留下 140 个的判据（按优先级）：
-
-1. **文档点名的保留**。`documentation/` 与 README 一共引用 54 个仓库路径，它们是移植记录的
-   证据来源，删了文档就指向空气 —— 包括 19 个 `tools/`。
-2. **从 v20 入口做依赖闭包**。`v20-*.sh`、`apply-wayland.sh`、`pack-v20.sh`、`build-*.sh`、
-   `apply-mainline.sh`、`k72-prepare.sh`、`lint.sh`、`git-prepare.sh`、`git-secretscan.sh`
-   等 25 个 `scripts/`。
-3. `packages/` `projects/` `config/` `distributions/` 全部保留（装进系统的东西、板子定义、
-   发布记录本来就只有当前一套）。
-
-一个必须写清楚的事实：**6.12.79 不是遗留支线**。`pack-v20.sh` 里写死
-`K6=/root/r36/linux-6.12.79`，v20 镜像同时装 `lib/modules/6.12.79` 和 `lib/modules/7.2.8`
-两棵模块树、生成 `boot-612.ini` 作回退项，`v20-stage72.sh` 还要从 6.12 树里取 dtb。
-所以 `apply-mainline.sh` 与 `build-all.sh` 是**当前镜像的构建前置**，即使默认内核已经是
-7.2.8 也必须留着。要真正只发 7.2.8，那是改打包流程 + 出 v21 的事，不是清理仓库文件的事。
-
-配套改动：`BUILD.md` 重写成单一的 v20 现行流程（原来的"从零构建"五步是 v19/6.12 的走法，
-和 v20 顺序并列摆着会误导人）；`apply-v19.sh` 结尾"下一步"提示从 `pack-v10.sh` 改指
-`pack-v20.sh`；README 的目录结构去掉 `archive/` 并写清删除物如何取回。
-
-验证：`make lint` 通过（46 shell / 9 python，0 失败）；markdown 链接 0 坏链；剩余 13 处
-"指向不存在路径"的匹配逐条看过，全是通配（`scripts/v20-*.sh`）、内核自带的 `scripts/config`、
-GitHub codeload 的 `/archive/` URL，以及本变更日志里对历史目录的描述。
-
-
+- **单内核**:v20 的双内核保险(6.12.79 同卡回退)按决定移除,镜像只带 7.2 系最新,
+  FAT 分区文件名回到朴素的 `Image`/`rk3326-xifan-r36max2.dtb`。
+- **panel-generic-dsi 入库**:主线没有 `rocknix,generic-dsi`,现 vendored(GPL 头保留)
+  + 7.x API 适配补丁(`devm_drm_panel_alloc`、`linux/hex.h`);dmc/dfi 惰性节点
+  (上游同样无驱动消费)以 board 补丁加进 px30.dtsi。
+- **可读性**:`k72-` 前缀(作者"内核 7.2 时期"的缩写)全部改为语义名
+  (evcap/flip-churn/wedge-probe/...),README 增加命名对照。
+- **删除** 24 个 v20 流水线脚本与全部 k72-*/主题真机脚本(git 历史完整);
+  `lint.sh` 新增三条规则:脚本禁含旧机路径、每个 package.mk 必须 pin 输入、
+  `build/`/`sources/`/`target/`/`build.*` 不入库。
+- v20 打包器的压缩前校验门全部保留并扩展(dpkg manifest 在场、blob 哈希匹配)。

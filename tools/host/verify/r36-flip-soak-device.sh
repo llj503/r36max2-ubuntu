@@ -1,5 +1,5 @@
 #!/bin/sh
-# r36-flip-soak.sh - runs ON the r36max2 (fed by k72-flip-soak.sh).
+# r36-flip-soak.sh - runs ON the r36max2 (fed by flip-soak-host.sh).
 # Long soak of weston with a churning EGL client, watching the kernel's flip
 # counters and weston's CPU time (which proves the client is really compositing).
 MINUTES=${MINUTES:-12}

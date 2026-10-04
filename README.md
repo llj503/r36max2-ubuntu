@@ -1,15 +1,16 @@
 # R36 Max 2 (RK3326) 上的 Ubuntu 26.04 —— 主线内核移植记录
 
 一块 2023 年的 RK3326 掌机（稀范 R36 Max 2，1 GB RAM / 64 GB TF / 1024x768 DSI 屏 /
-AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核（v20 起默认 7.2.8，
-6.12.79 同卡保留）+ 官方 Ubuntu 26.04 base 从零做一套通用 Linux 开发环境**的全过程。
+AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核 + 官方 Ubuntu 26.04 base
+从零做一套通用 Linux 开发环境**的全过程。
 
-> English (TL;DR): mainline Linux (7.2.8 by default since image v20, 6.12.79 kept on the
-> same card as a one-rename fallback) + Ubuntu 26.04 on an RK3326 handheld that ships
-> EmuELEC. Board DTS, image build/pack scripts, rootfs config, a head-less EGL/GLES2 demo
-> that proves the panfrost stack, a Weston session and a uinput joypad-to-mouse/keyboard
-> bridge. Boot chain is unchanged (vendor u-boot reads `boot.ini` from the FAT partition),
-> the eMMC is never touched, and pulling the card restores the stock system.
+> English (TL;DR): mainline Linux (latest 7.2.x since v21) + Ubuntu 26.04 on an RK3326
+> handheld that ships EmuELEC. Board DTS, a ROCKNIX-style reproducible build framework
+> (toolchain built from pinned sources, every input sha256-verified, deterministic image
+> packing), rootfs config, a head-less EGL/GLES2 demo that proves the panfrost stack, a
+> Weston session and a uinput joypad-to-mouse/keyboard bridge. Boot chain is unchanged
+> (vendor u-boot reads `boot.ini` from the FAT partition), the eMMC is never touched, and
+> pulling the card restores the stock system.
 
 **不是**模拟器前端，也不是桌面系统 —— 目标是能 SSH、能编译、能跑图形 demo 的开发机。
 所有结论都是真机量出来的，不是推测；没验的会写"没验"。
@@ -21,7 +22,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 | 项目 | 状态 | 证据 / 详见 |
 | --- | --- | --- |
 | 引导（TF 卡双启动，eMMC 原样保留） | ✅ | u-boot 2017.09 → `boot.ini` → `booti` |
-| 主线内核 6.12.79 + 板级 dtb | ✅ | [`projects/r36max2/dt/`](projects/r36max2/dt/)，另见 [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
+| 主线内核 6.12.79 + 板级 dtb | ✅ | [`projects/RK3326/dt/`](projects/RK3326/dt/)，另见 [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
 | 屏 / 背光 / 控制台 | ✅ | DSI 1024x768@60，fbcon 正常 |
 | systemd + 网络 + SSH | ✅ | 40 秒内拿到 DHCP 地址 |
 | WiFi（AIC8800DC，USB，chip_sub_id=2） | ✅ | 关联 -47 dBm，rx65/tx78 MBit/s |
@@ -68,10 +69,13 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 ## 目录结构
 
 顶层按 [ROCKNIX/distribution](https://github.com/ROCKNIX/distribution) 的角色划分组织，
-仓库里只留**当前这一套（v20 / 7.2.8）**在用的东西，共 140 个文件：
+仓库里只留**当前这一套（v21 构建框架）**在用的东西。命名对照：**v2…v20** = 历史镜像
+版本号（`distributions/` 里每版一个 sha256，v21 是正在构建的这版）；**k72-** = 作者旧前缀，
+意思是"内核 7.2 时期"，工具脚本现已全部改为语义命名；**r36-** = 装进 rootfs 跑在板子上的
+设备包；**aic8800 / joypad** = WiFi / 摇杆两颗外设芯片的驱动：
 
 ```
-projects/r36max2/   板子定义：dt/ 设备树（含 usbhost/gadget 变体、DRAM timing）、patches/ 内核补丁集
+projects/RK3326/   板子定义：dt/ 设备树（含 usbhost/gadget 变体、DRAM timing）、patches/ 内核补丁集
 packages/           装进 rootfs、跑在板子上的 11 个包（键鼠桥、osk、weston 会话、ES 启动器、
                     bootlog、状态页、配网、扩根、固件切换、usb-gadget、gpu-demos）
 scripts/            当前流水线：取内核、打补丁、编译、装 rootfs、打包镜像、lint（25 个）

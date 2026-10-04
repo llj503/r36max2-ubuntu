@@ -23,7 +23,8 @@
   要么另想办法；这一步需要他参与决定拷哪些。
 - **左摇杆导航还没被眼睛确认**：`joystick1left/up` 绑定是照 `InputConfig.cpp` 的判定写进去的，
   原始轴事件也确认过满行程（`ABS_X/Y/RX/RY` ±1800），但"推摇杆光标到底动没动、方向对不对"
-  只有看屏幕才知道 —— 反了就用 `scripts/k72-es-sticknav.sh flip`。
+  只有看屏幕才知道 —— 反了就改 `packages/rk3326/es-launcher/es-input-*.cfg` 里那两条绑定的
+  `value` 正负（当时的 `scripts/k72-es-sticknav.sh flip` 已删）。
 - **weston 的 vblank 丢失又出现了，但形态不同**：2026-10-03 20:49:17 起再次打出
   `[CRTC:39:crtc-0] vblank wait timed out`（`WARNING drivers/gpu/drm/drm_atomic_helper.c:1921`），
   到 21:31 还在间歇增加；**但这一轮 weston 侧 0 条 `Device or resource busy`、画面全程可以操作**。

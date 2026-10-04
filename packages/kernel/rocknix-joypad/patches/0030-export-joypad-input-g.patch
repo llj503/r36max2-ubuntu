@@ -1,0 +1,16 @@
+rocknix-singleadc-joypad references joypad_input_g (extern + assignment in its
+probe) but nothing in the tree defines it - the upstream "else" branch that
+builds both modules for RK3326 cannot link as shipped. Define + export it here.
+--- a/rocknix-joypad.c
++++ b/rocknix-joypad.c
+@@ -1015,6 +1015,10 @@
+ }
+ 
+ /*----------------------------------------------------------------------------*/
++/* shared with rocknix-singleadc-joypad (its probe assigns joypad_input_g) */
++struct input_dev *joypad_input_g;
++EXPORT_SYMBOL(joypad_input_g);
++
+ static int joypad_probe(struct platform_device *pdev)
+ {
+ 	struct joypad *joypad;

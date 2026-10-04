@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Distro identity for the r36max2 build framework (structure follows ROCKNIX/distribution).
+#
+# VERSION: image release series built by this tree
+  DISTRO_VERSION="v21"
+
+# OS_VERSION: Ubuntu base the rootfs is built on. Deliberately NOT date-derived:
+# a fixed string keeps two builds of the same tree byte-identical.
+  OS_VERSION="26.04"

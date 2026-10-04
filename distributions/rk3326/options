@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Distro options, structure follows ROCKNIX/distribution (distributions/<DISTRO>/options).
+
+# Name of the Distro to build (full name)
+  DISTRONAME="r36max2-ubuntu"
+
+# short project description
+  DESCRIPTION="Mainline Linux + Ubuntu 26.04 for the R36 Max 2 (RK3326) handheld."
+
+# Distribution Home URL
+  HOME_URL="https://github.com/llj503/r36max2-ubuntu"
+
+# Linker support
+  LTO_SUPPORT="no"
+  GOLD_SUPPORT="no"
+  MOLD_SUPPORT="no"
+  DEFAULT_LINKER="bfd"
+
+# Hardening flags: off on purpose - kernel+modules are the payload, and matching
+# the v20 image's flags keeps the first v21 comparable.
+  HARDENING_SUPPORT="no"
+
+# Source fetch handlers enabled for this distro (scripts/get whitelist)
+  GET_HANDLER_SUPPORT="archive git file"
+
+# --- Ubuntu base layer -------------------------------------------------------
+# The rootfs base is the official ubuntu-base tarball (see r36-rootfs-base package)
+# plus apt packages installed from Ubuntu's snapshot service. The snapshot id is
+# part of the input manifest: bumping it is a deliberate, reviewed change, and the
+# installed dpkg manifest is recorded into distributions/ with every image.
+# Format: YYYYMMDDTHHMMSSZ (UTC), >= 2023-03-01.
+  APT_SNAPSHOT="20261001T000000Z"
+  APT_MIRROR_HOST="snapshot.ubuntu.com"
+
+# Default apt country/config for the device
+  APT_COUNTRY="CN"
+
+# --- image layout (deterministic: fixed, not date- or uuidgen-derived) --------
+# FAT BOOT partition (u-boot 2017.09 reads boot.ini from here) and ext4 root.
+# Sector values match the v20 layout exactly (sfdisk, 512-byte sectors).
+  BOOT_START_SECTOR="32768"
+  BOOT_SIZE_SECTORS="229376"          # 112 MiB
+  SYSTEM_START_SECTOR="262144"        # 128 MiB offset
+  SYSTEM_SIZE_SECTORS="4194304"       # 2 GiB
+# Vendor u-boot blob write offsets (sectors), unchanged from the stock chain
+  BLOB_IDBLOADER_SECTOR="64"
+  BLOB_UBOOT_SECTOR="16384"
+  BLOB_TRUST_SECTOR="24576"
+# Fixed volume identities so two builds produce identical partition metadata.
+# Change these only together with a release-notes entry.
+  BOOT_VOLUME_ID="0x20261004"
+  SYSTEM_UUID="6b1f4a24-2f0e-4f21-9d3a-52c1a9d7e101"
+  BOOT_LABEL="BOOT"
+  SYSTEM_LABEL="UBUNTU"
+
+# --- kernel ------------------------------------------------------------------
+# v21 ships a single kernel (latest 7.2.x). The v20 dual-kernel fallback
+# (6.12.79 on the same card) was dropped by decision; recoverable from git
+# history and the v20 images.
+  KERNEL_DEFAULT="linux"

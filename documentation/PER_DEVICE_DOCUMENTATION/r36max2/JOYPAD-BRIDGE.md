@@ -2,7 +2,7 @@
 
 [← 返回 README](../../../README.md)
 
-`packages/r36-keymapper/r36-keymapper.py`（纯标准库）读摇杆的 evdev 节点，用 `/dev/uinput` 造一个键盘 +
+`packages/keymapper/r36-keymapper.py`（纯标准库）读摇杆的 evdev 节点，用 `/dev/uinput` 造一个键盘 +
 一个鼠标重新发出去。内核内建 uinput，不需要模块，**也不需要合成器在跑**——验证映射的方法
 就是读那两个新 event 节点，完全不碰 DRM，所以它能安全地单独使用、单独关掉。
 

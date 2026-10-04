@@ -1,0 +1,132 @@
+#!/bin/bash
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2009-2016 Stephan Raue (stephan@openelec.tv)
+# Copyright (C) 2018-present Team LibreELEC (https://libreelec.tv)
+# Trimmed for the r36max2 build framework: Debian/Ubuntu hosts only, plus the
+# extra host tools our image assembly needs (mtools/parted/u-boot-tools) and
+# the arm64 chroot requirement (qemu-user-static on x86_64 hosts).
+
+set -e
+
+# set up variables
+declare -A dep_map file_map need_map
+DEBUG="false"
+
+get_deps() {
+  # start from a blank slate
+  need_map=()
+
+  for key in "${!dep_map[@]}"; do
+    if ! command -v "${key}" >/dev/null; then
+      need_map["${key}"]="${dep_map[${key}]}"
+    fi
+  done
+
+  for key in "${!file_map[@]}"; do
+    if [ ! -f "${key}" ]; then
+      need_map["${key}"]="${file_map[${key}]}"
+    fi
+  done
+}
+
+get_yes_no()
+{
+  local ans
+  read -p "Would you like to install the needed tools? (y/n)" ans
+  [ "${ans,,}" = "y" ] && return 0
+  [ "${ans,,}" = "yes" ] && return 0
+  return 1
+}
+
+if  [ -f /etc/os-release ]; then
+  DISTRO=$(grep ^ID= /etc/os-release | cut -d "=" -f 2)
+fi
+
+DISTRO=${DISTRO,,}
+
+# [program]=package
+dep_map=(
+  [bash]=bash
+  [bc]=bc
+  [bison]=bison
+  [bzip2]=bzip2
+  [cpio]=cpio
+  [curl]=curl
+  [diff]=diffutils
+  [flex]=flex
+  [gawk]=gawk
+  [gcc]=gcc
+  [g++]=g++
+  [gperf]=gperf
+  [gzip]=gzip
+  [file]=file
+  [lsdiff]=patchutils
+  [make]=make
+  [mcopy]=mtools
+  [mkimage]=u-boot-tools
+  [patch]=patch
+  [parted]=parted
+  [perl]=perl
+  [python3]=python3
+  [rsync]=rsync
+  [sed]=sed
+  [tar]=tar
+  [unzip]=unzip
+  [wget]=wget
+  [xz]=xz-utils
+  [zip]=zip
+  [zstd]=zstd
+)
+
+# [file]=package
+file_map=(
+  [/usr/include/stdio.h]=libc6-dev
+  [/usr/include/libelf.h]=libelf-dev
+)
+
+# the rootfs base is assembled via chroot+apt; on an x86_64 host that needs
+# qemu binfmt emulation for the arm64 rootfs
+if [ "$(uname -m)" = "x86_64" ]; then
+  file_map[/usr/bin/qemu-aarch64-static]=qemu-user-static
+fi
+
+### DEPENDENCY CHECKING AND INSTALLATION ###
+get_deps
+
+if [ "${#need_map[@]}" -gt 0 ]; then
+  echo "**** This system lacks the following tools needed to build ${DISTRONAME} ****"
+  for key in "${!need_map[@]}"; do
+    echo "${key} provided by ${need_map[${key}]}"
+  done
+  echo "**** The system appears to be a ${DISTRO} system ****"
+
+  if command -v sudo >/dev/null; then
+    case "${DISTRO}" in
+      ubuntu|debian|linuxmint|\"elementary\")
+        get_yes_no && sudo apt-get install "${need_map[@]}"
+        ;;
+      *)
+        echo "**** unsupported distro ${DISTRO} - install the packages listed above manually ****"
+        exit 1
+        ;;
+    esac
+  else
+    echo "The command 'sudo' was not found. Please install necessary packages manually."
+    exit 1
+  fi
+fi
+
+# check if installed packages satisfied deps
+get_deps
+
+if [ "${#need_map[@]}" -gt 0 ]; then
+  echo "**** The following packages were not installed correctly ****"
+  for key in "${!need_map[@]}"; do
+    echo "${key} provided by ${need_map[${key}]}"
+  done
+  echo "********"
+  exit 1
+fi
+
+echo "host dependencies satisfied"

@@ -1,0 +1,55 @@
+--- a/drivers/gpu/drm/panel/panel-generic-dsi.c	2026-10-04 13:16:54.101707714 +0800
++++ b/drivers/gpu/drm/panel/panel-generic-dsi.c	2026-10-04 13:16:54.128910843 +0800
+@@ -11,6 +11,7 @@
+ 
+ #include <linux/delay.h>
+ #include <linux/gpio/consumer.h>
++#include <linux/hex.h>
+ #include <linux/media-bus-format.h>
+ #include <linux/module.h>
+ #include <linux/firmware.h>
+@@ -617,9 +618,12 @@
+     struct display_timing *timing;
+     int ret;
+ 
+-    ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
+-    if (!ctx)
+-        return -ENOMEM;
++    /* 7.x: devm_drm_panel_alloc() allocates the container struct and
++     * initialises the embedded panel; it returns ERR_PTR on error. */
++    ctx = devm_drm_panel_alloc(dev, struct generic_panel, panel,
++                               &generic_panel_funcs, DRM_MODE_CONNECTOR_DSI);
++    if (IS_ERR(ctx))
++        return PTR_ERR(ctx);
+ 
+     ctx->enable_gpio = devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_LOW);
+     if (IS_ERR(ctx->enable_gpio)) {
+@@ -690,19 +694,13 @@
+ 
+     dev_info(dev, "lanes %d, format %d, mode %lx\n", dsi->lanes, dsi->format, dsi->mode_flags);
+ 
+-    drm_panel_init(&ctx->panel, &dsi->dev, &generic_panel_funcs,
+-               DRM_MODE_CONNECTOR_DSI);
+-
+     ret = drm_panel_of_backlight(&ctx->panel);
+     if (ret)
+         return ret;
+ 
+-    drm_panel_add(&ctx->panel);
+-
+     ret = mipi_dsi_attach(dsi);
+     if (ret < 0) {
+         dev_err(dev, "mipi_dsi_attach failed: %d\n", ret);
+-        drm_panel_remove(&ctx->panel);
+         return ret;
+     }
+ 
+@@ -732,8 +730,6 @@
+     ret = mipi_dsi_detach(dsi);
+     if (ret < 0)
+         dev_err(&dsi->dev, "Failed to detach from DSI host: %d\n", ret);
+-
+-    drm_panel_remove(&ctx->panel);
+ #if defined(GENERIC_DSI_LEGACY_KERNEL)
+     return 0;
+ #endif

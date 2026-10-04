@@ -14,11 +14,11 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   后面紧跟着一句看起来像成功的 `apt exit=0`），所以 `scripts/k72-wayland-install.sh`
   先用 `apt-cache policy` 过滤再安装。
 - 落地的文件（都在仓库里，装完设备与将来出镜像用同一批）：
-  `packages/r36-wayland/weston.ini` → `/etc/xdg/weston/weston.ini`；
-  `packages/r36-wayland/weston.service` → systemd 单元，**默认 disabled**，因为合成器一拿 DRM master
+  `packages/wayland/weston.ini` → `/etc/xdg/weston/weston.ini`；
+  `packages/wayland/weston.service` → systemd 单元，**默认 disabled**，因为合成器一拿 DRM master
   就会把 tty1 的状态页顶掉；
-  `packages/r36-wayland/r36-wayland` → `/usr/local/bin/r36-wayland`（`start|stop|status|run <app>|egl|
-  term|smoke [秒]|shot|apps|env`）；`packages/r36-wayland/zz-r36-wayland.sh` → `/etc/profile.d/`，只在
+  `packages/wayland/r36-wayland` → `/usr/local/bin/r36-wayland`（`start|stop|status|run <app>|egl|
+  term|smoke [秒]|shot|apps|env`）；`packages/wayland/zz-r36-wayland.sh` → `/etc/profile.d/`，只在
   socket 存在时导出 `XDG_RUNTIME_DIR=/run/wayland WAYLAND_DISPLAY=wayland-0`。
 - 用法：`r36-wayland start` → `r36-wayland run foot`（或 `r36-wayland smoke 30` 摆两个
   GL 客户端）。从 SSH 起的程序直接显示在屏幕上，这就是这台没键盘的机器的日常姿势。
@@ -48,8 +48,8 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   之后 `rockchip-drm: vblank wait timed out on crtc 0` / `flip_done timed out` /
   `[CRTC:39:crtc-0] commit wait timed out` 每 10–40 秒循环，面板冻在最后一帧（看起来是"白屏带四角暗块"）。
   **停 weston、`chvt 1`、写 `fb0/blank=0` 都救不回来**，vsync 中断已经不再来了。
-  **加上 `[core] pageflip-timeout=500` 后的复测**（`tools/gpu/runtime/k72-flip-churn.sh`：8 轮 × 12 秒、每轮把
-  EGL 客户端 SIGKILL 掉复现"拆面"；`tools/host/verify/k72-flip-soak.sh`：12 分钟、每分钟起停一次客户端）：
+  **加上 `[core] pageflip-timeout=500` 后的复测**（`tools/gpu/runtime/flip-churn.sh`：8 轮 × 12 秒、每轮把
+  EGL 客户端 SIGKILL 掉复现"拆面"；`tools/host/verify/flip-soak-host.sh`：12 分钟、每分钟起停一次客户端）：
   内核四个 flip/vblank 计数**全程 0 增量**，weston 一直活着，stop 之后控制台自动回来。为了不让
   "客户端根本没挂上"冒充成功，脚本先用 weston 的累计 CPU 时间证明真在合成——空闲 15 秒 ΔCPU=0 秒，
   带 `weston-simple-egl` 15 秒 ΔCPU=2 秒，浸泡期间每分钟稳定 +2.5~3 秒。
@@ -58,7 +58,7 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   pending flip, but as we are shutting down we can't wait to destroy it when the flip completes`），
   所以"23 分钟"可能只是延迟，真正弄丢 vsync 中断的是那次中途硬杀。
 - **但"中途硬杀"这条已被证伪，同时"只有重启能救"被证实**（2026-10-03 下午第二次发作）：
-  专门造的三个复现工具（`tools/gpu/runtime/k72-killmidflip.sh` 在 flip 飞行途中 SIGKILL、`k72-sigtermflip.sh` 换
+  专门造的三个复现工具（`tools/gpu/runtime/kill-midflip.sh` 在 flip 飞行途中 SIGKILL、当时的 `k72-sigtermflip.sh` 换
   SIGTERM、`r36-fatalabort-device.sh` 让客户端自己 abort）全部**没能**弄丢 vsync；而第二次卡死发生在
   `pageflip-timeout=500` **已经生效**、屏幕**完全静止**（foot + 一个没人点的 wofi 网格，没有任何客户端
   起停）约 23 分钟的时候。于是"拆面"和"硬杀"两个触发假设都死了，剩下的嫌疑人只有"跑了多久"和
@@ -68,8 +68,8 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   在等 vblank**，说明 vsync 已在 VOP/内核层消失，与合成器无关；② 重新 `systemctl start weston` 后，
   weston 每一帧都被拒：`atomic: couldn't commit new state: Device or resource busy` +
   `repaint-flush failed: Device or resource busy`——那条卡死的 commit 还占着 CRTC 状态。
-  **所以 weston 重启不救，只有重启机器能救**（判定脚本：`tools/misc/diagnostics/k72-wedge-probe.sh` 停合成器后裸测翻页、
-  `k72-wedge-state.sh` 看是否还有新 stall、`k72-restore-weston.sh` 收尾）。
+  **所以 weston 重启不救，只有重启机器能救**（判定脚本：`tools/misc/diagnostics/wedge-probe.sh` 停合成器后裸测翻页、
+  `k72-wedge-state.sh`（看是否还有新 stall）、`k72-restore-weston.sh`（收尾）——后两个是当时的临时脚本，已删，git 历史可取回）。
   测量工具是 `packages/gpu-demos/r36-flipprobe.c`（装成 `/usr/local/bin/r36-flipprobe`）：dumb buffer +
   `drmModePageFlip(DRM_MODE_PAGE_FLIP_EVENT)` + poll 计时，健康时 40 次翻页平均 1.7 ms、最大 16.6 ms；
   管线卡死时它自己会**阻塞在内核里不返回**（连 3 秒超时的打印都出不来）——这本身也是个信号。

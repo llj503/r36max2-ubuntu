@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Device options for the R36 Max 2 (RK3326, "xifan" board).
+# All hardware conclusions referenced here are documented in
+# documentation/PER_DEVICE_DOCUMENTATION/r36max2/ (HARDWARE.md, KERNELS.md).
+
+# RK3326 / PX30: 4x Cortex-A35
+  TARGET_CPU="cortex-a35"
+
+# kernel output target (arm64 Image, wrapped by u-boot booti - no mkimage step)
+  KERNEL_TARGET="Image"
+
+# kernel command line - identical to the v20 boot.ini, byte for byte
+  EXTRA_CMDLINE="rootwait rw net.ifnames=0 fbcon=rotate:0 console=tty0 loglevel=5 systemd.show_status=1"
+
+# device trees to build and ship (three variants: stock, USB-host test, USB-gadget)
+  R36_DTBS="rk3326-xifan-r36max2 rk3326-xifan-r36max2-usbhost rk3326-xifan-r36max2-gadget"
+
+# graphics: Mali-G31 MC1 via panfrost (no blob), DSI panel via panel-generic-dsi
+  GRAPHIC_DRIVERS="panfrost"
+
+# v21 ships ONE kernel (latest 7.2.x series). Boot artifacts keep the plain
+# v19-era names on the FAT partition (Image, rk3326-xifan-r36max2.dtb).
