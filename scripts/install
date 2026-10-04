@@ -19,6 +19,14 @@ if [ -z "${INSTALL}" ]; then
   die "error: '\${INSTALL}' not set! this script is not intended to be run manually"
 fi
 
+# root helper: same shape as scripts/image.  the staging tree is root-owned, so
+# merging into it is a privileged write (see the tar below).
+if command -v wsl.exe >/dev/null 2>&1 && ! sudo -n true 2>/dev/null; then
+  SUDO() { wsl.exe -u root -- "$@"; }
+else
+  SUDO() { sudo "$@"; }
+fi
+
 if [ -n "${PKG_ARCH}" ]; then
   listcontains "${PKG_ARCH}" "!${TARGET_ARCH}" && exit 0
   listcontains "${PKG_ARCH}" "${TARGET_ARCH}" || listcontains "${PKG_ARCH}" "any" || exit 0
@@ -167,6 +175,10 @@ if [ "${TARGET}" = "target" ]; then
 fi
 
 if [ -n "${PKG_INSTALL}" -a -d "${PKG_INSTALL}" ]; then
+  # the merge has to write as root: ${INSTALL} is ${BUILD}/image/system, which
+  # rootfs-apt chowns to root at the end of its install phase on purpose (the image
+  # must be root-owned end to end).  as the build user the very first directory
+  # failed with "tar: ./lib/modules: Cannot mkdir: Permission denied".
   tar \
     -C "${PKG_INSTALL}" \
     --exclude=./usr/local/include \
@@ -187,7 +199,7 @@ if [ -n "${PKG_INSTALL}" -a -d "${PKG_INSTALL}" ]; then
     --exclude=./.* \
     --exclude='*.a' \
     --exclude='*.la' \
-    -cf - . | tar -C "${INSTALL}" -xf -
+    -cf - . | SUDO tar -C "${INSTALL}" -xf -
 fi
 
 if [ "${TARGET}" = "target" ]; then
