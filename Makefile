@@ -21,10 +21,12 @@ checkdeps:
 source:
 	@bash scripts/get linux
 	@bash scripts/get busybox
-	@bash scripts/get r36-joypad
+	@bash scripts/get rocknix-joypad
 	@bash scripts/get aic8800
 	@bash scripts/get aic8800-dc-fw
 	@bash scripts/get rootfs-base
+	@bash scripts/get emulationstation
+	@bash scripts/get es-theme-art-book-next
 
 build:
 	@test -n "$(PKG)" || { echo "usage: make build PKG=<package>"; exit 1; }
