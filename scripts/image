@@ -243,15 +243,34 @@ for d in "${MNT}/boot/rk3326-xifan-r36max2.dtb"; do
 done
 
 # --- the three assertions the v20 card had to teach the hard way --------------
-# 1. wifi-setup's units must be enabled.  On the v20 card the files were on disk but in
-#    no *.wants/ directory, so systemd never ran them; the only symptom was that
-#    r36-boot.txt never mentioned them, which proves nothing because that service list
-#    never included them.  Absence from a log is not evidence - presence is asserted.
-for want in multi-user.target.wants/r36-wifi-setup.service timers.target.wants/r36-wifi-setup.timer; do
-  SUDO ls "${MNT}/root/etc/systemd/system/${want}" >/dev/null 2>&1 \
-    || { v "  !! not enabled: ${want}"; fail=1; }
+# 1. every unit a package enables must be enabled somewhere systemd looks, and no
+#    wants symlink may dangle.  Two v20 lessons: wifi-setup's files were on disk but
+#    in no *.wants/ directory, so systemd never ran them - and the only symptom was
+#    that r36-boot.txt never mentioned them, which proves nothing, because that
+#    service list never included them.  Absence from a log is not evidence: presence
+#    is asserted here.  rootfs-apt meanwhile linked r36-audio.service, a unit nobody
+#    ships, i.e. a dangling wants symlink -> a not-found unit at boot.
+for want in multi-user.target.wants/r36-wifi-setup.service \
+            multi-user.target.wants/r36-wpa@wlan0.service \
+            multi-user.target.wants/r36-status-screen.service \
+            multi-user.target.wants/r36-resize-root.service \
+            multi-user.target.wants/r36-fwswap.service \
+            multi-user.target.wants/r36-usb-gadget.service \
+            multi-user.target.wants/r36-hostkeys.service \
+            multi-user.target.wants/audio.service \
+            timers.target.wants/r36-wifi-setup.timer \
+            timers.target.wants/r36-bootlog.timer; do
+  where=""
+  for base in etc usr/lib; do
+    SUDO ls "${MNT}/root/${base}/systemd/system/${want}" >/dev/null 2>&1 && where="${base}"
+  done
+  [ -n "${where}" ] || { v "  !! not enabled: ${want}"; fail=1; }
 done
-v "  wifi-setup service + timer enabled"
+# -xtype l = a symlink whose target does not exist
+dangling=$(SUDO find "${MNT}/root/etc/systemd/system" "${MNT}/root/usr/lib/systemd/system" \
+                 -maxdepth 2 -xtype l 2>/dev/null | sed "s|${MNT}/root/||" | tr '\n' ' ')
+[ -z "${dangling}" ] || { v "  !! dangling systemd links: ${dangling}"; fail=1; }
+v "  10 enabled units found (in /etc or /usr/lib), no dangling wants links"
 
 # 2. every filename a boot*.ini loads must be on the FAT partition.  u-boot 2017.09
 #    resolves filenames literally; one typo is a black screen and this board has no

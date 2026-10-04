@@ -62,6 +62,21 @@ for f in $(git ls-files -- '*package.mk'); do
     n=$(sed -n 's/^PKG_NAME="\([^"]*\)"/\1/p' "$f" | head -1)
     [ "$d" = "$n" ] || { echo "PKG-NAME-MISMATCH $f：目录=$d 但 PKG_NAME=$n"; fail=1; }
 done
+# 4) 依赖名必须指向一个真实的包目录。v21 第一次跑到 wayland 时报
+#    "unable to source package - r36-keymapper/package.mk does not exist"：
+#    依赖写的是旧的 PKG_NAME，而框架按目录名找包。
+#    依赖行可以用 \ 续行，也要剥掉 :host / :target / :init 这类变体后缀。
+PKGS=$(for d in $(git ls-files -- '*package.mk'); do basename "$(dirname "$d")"; done | sort -u)
+for f in $(git ls-files -- '*package.mk'); do
+    joined=$(sed -e :a -e '/\\$/N; s/\\\n//; ta' "$f")
+    for line in $(echo "$joined" | grep -E '^PKG_DEPENDS_(TARGET|HOST|INIT)=' | sed 's/^[^=]*=//'); do
+        for p in $(echo "$line" | tr -d '"'); do
+            [ -z "${p%%:*}" ] && continue
+            echo "$PKGS" | grep -qx "${p%%:*}" && continue
+            echo "UNKNOWN-DEP $f：依赖 $p 没有对应的包目录"; fail=1
+        done
+    done
+done
 
 echo "lint: $(git ls-files | wc -l) tracked, ${#SH[@]} shell, ${#PY[@]} python"
 exit $fail
