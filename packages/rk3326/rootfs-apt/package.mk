@@ -296,6 +296,12 @@ EOS
   # layer: SDL2/mesa/drm -dev etc.) so cross builds (gpu-demos, emulationstation)
   # link against exactly what the image ships
   local SR="${SYSROOT_PREFIX}"
+  # ${SR} here is this package's PRIVATE sysroot copy, and it has no lib/ at all until
+  # we make one - the first run proved it:
+  #   cp: cannot create directory '.../.sysroot/rootfs-apt.target/lib/aarch64-linux-gnu':
+  #       No such file or directory
+  # rootfs-base does the same mkdir before mirroring; the re-mirror needs it too.
+  mkdir -p "${SR}/usr" "${SR}/lib"
   rm -rf "${SR}/usr/include" "${SR}/usr/lib/aarch64-linux-gnu" "${SR}/lib/aarch64-linux-gnu"
   cp -a "${R}/usr/include" "${SR}/usr/include" ||
     die "rootfs-apt: cannot re-mirror headers into ${SR}/usr/include"
