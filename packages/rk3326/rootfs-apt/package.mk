@@ -91,6 +91,13 @@ CONF
     SUDO() { sudo "$@"; }
   fi
 
+  # take the tree back before touching it: a completed run leaves ${R} root-owned on
+  # purpose (the image must ship root-owned files - see the chown at the end of this
+  # phase), which makes this phase die on its SECOND execution with
+  # "mkdir: cannot create directory '.../image/system/debs': Permission denied".
+  # It only surfaced now because every earlier run reused rootfs-apt's stamp.
+  SUDO chown -R "$(id -u):$(id -g)" "${R}" 2>/dev/null || true
+
   mkdir -p "${R}/debs"
   cp "${aptroot_dir}"/var/cache/apt/archives/*.deb "${R}/debs/"
 
