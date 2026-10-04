@@ -41,7 +41,13 @@
   BOOT_START_SECTOR="32768"
   BOOT_SIZE_SECTORS="229376"          # 112 MiB
   SYSTEM_START_SECTOR="262144"        # 128 MiB offset
-  SYSTEM_SIZE_SECTORS="4194304"       # 2 GiB
+# 4 GiB, not v20's 2 GiB.  Measured on the first framework build (2026-10-04): the
+# staging rootfs alone was 2658 MiB before EmulationStation was even installed, and
+# Ubuntu 26.04's apt resolution replaces GNU coreutils with rust-coreutils, which costs
+# 1151 MiB of that (/usr/lib/cargo/bin/coreutils = 114 binaries, one per utility).
+# Keeping the distro's choice was the call, so the partition grows instead; the image
+# is still sparse-hostile-free because scripts/image below asserts the fit.
+  SYSTEM_SIZE_SECTORS="8388608"       # 4 GiB
 # Vendor u-boot blob write offsets (sectors), unchanged from the stock chain
   BLOB_IDBLOADER_SECTOR="64"
   BLOB_UBOOT_SECTOR="16384"

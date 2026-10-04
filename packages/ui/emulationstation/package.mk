@@ -23,7 +23,9 @@ PKG_SHA256="c92eb0fd6e1e2b5fa603391f6c0b540d4fad858664c23321237df32efecf68ad"
 PKG_LICENSE="GPL-2.0"
 PKG_SITE="https://github.com/ROCKNIX/emulationstation-next"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
-PKG_DEPENDS_TARGET="toolchain rootfs-apt es-theme-art-book-next"
+# the theme is not a build input and is not shipped in v21 (decision 2026-10-04), so it
+# is not a dependency here either - see packages/virtual/image/package.mk
+PKG_DEPENDS_TARGET="toolchain rootfs-apt"
 PKG_LONGDESC="EmulationStation front end (emulationstation-next, GLES3), cross-built."
 PKG_TOOLCHAIN="cmake-make"
 

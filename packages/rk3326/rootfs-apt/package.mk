@@ -118,10 +118,22 @@ CONF
   SUDO chroot "${R}" /usr/bin/env DEBIAN_FRONTEND=noninteractive \
     bash -c 'dpkg -i --force-confdef --force-confold /debs/*.deb' 2>&1 | tail -6
 
-  # dpkg manifest - ships in the image and in distributions/ with the release
+  # dpkg manifest - ships in the image and in distributions/ with the release.
+  # The query format must NOT be passed as an argument across the root session:
+  # `wsl.exe -u root -- chroot ... dpkg-query -f='...\t...\n'` loses the backslash
+  # escapes, and the first real run proved it - 1959 bytes of package names with zero
+  # newlines, which the count below rejected.  So the format lives in a script file
+  # (heredoc keeps the escapes literal) and the root session runs that file.
   mkdir -p "${R}/etc/r36max2"
-  SUDO chroot "${R}" dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
-    > "${R}/etc/r36max2/dpkg-manifest.txt"
+  local Q="${BUILD}/.${PKG_NAME}-manifest.sh"
+  cat > "${Q}" <<'QEOF'
+#!/bin/sh
+# $1 = chroot dir, $2 = manifest path; both inside the tree the root session owns
+chroot "$1" dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' > "$2"
+QEOF
+  chmod 755 "${Q}"
+  SUDO bash "${Q}" "${R}" "${R}/etc/r36max2/dpkg-manifest.txt"
+  rm -f "${Q}"
 
   # Proof the install actually happened, not just that dpkg returned 0: a rootfs
   # without a working sshd cannot be reached, and without wpa_supplicant it cannot

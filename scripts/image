@@ -52,6 +52,17 @@ for kv in "${R}"/lib/modules/*; do rm -f "${kv}/build" "${kv}/source" 2>/dev/nul
 echo "  rootfs size: $(du -sh "${R}" | cut -f1)"
 echo "  free: $(df -h . | tail -1 | awk '{print $4}')"
 
+# Measure before formatting, not after the rsync fails with ENOSPC halfway through.
+# The first framework run came out 2658 MiB against a 2 GiB partition and the packing
+# step died mid-copy with a message about the filesystem, not about the plan.
+root_kb=$(( $((${SYSTEM_SIZE_SECTORS})) * 512 / 1024 ))
+need_kb=$(du -sk --exclude="${R}/proc" --exclude="${R}/sys" --exclude="${R}/dev" "${R}" 2>/dev/null | cut -f1)
+echo "  root partition: $((root_kb/1024)) MiB, staging rootfs: $((need_kb/1024)) MiB"
+[ "${need_kb}" -lt "${root_kb}" ] || die "image: rootfs needs $((need_kb/1024)) MiB but SYSTEM_SIZE_SECTORS gives $((root_kb/1024)) MiB - raise it in distributions/${PROJECT}/options (and say so in the release notes)"
+free_mb=$(( (root_kb - need_kb) / 1024 ))
+echo "  fits with ${free_mb} MiB spare"
+[ "${free_mb}" -gt 64 ] || echo "  !! less than 64 MiB spare - first-boot growth (logs, apt cache) will be tight"
+
 echo "=== [2] vendor u-boot blobs ==="
 for b in idbloader.img uboot.img trust.img; do
   [ -f "${VENDOR}/${b}" ] || die "image: ${VENDOR}/${b} missing - run scripts/extract-vendor-blobs.sh (see BUILD.md)"
@@ -222,8 +233,10 @@ v "machine-id: $([ -s "${MNT}/root/etc/machine-id" ] && echo NON-EMPTY || echo e
 [ -s "${MNT}/root/etc/machine-id" ] && fail=1
 v "wpa configs with creds: $(SUDO grep -l '^psk=' "${MNT}/root/etc/wpa_supplicant/"*wlan0.conf 2>/dev/null | wc -l) (must be 0)"
 SUDO grep -q '^psk=' "${MNT}/root/etc/wpa_supplicant/"*wlan0.conf 2>/dev/null && fail=1
-SUDO [ -e "${MNT}/root/etc/r36max2/dpkg-manifest.txt" ] \
-  || { v "  !! dpkg manifest missing"; fail=1; }
+nl=$(SUDO wc -l < "${MNT}/root/etc/r36max2/dpkg-manifest.txt" 2>/dev/null || echo 0)
+[ "${nl}" -gt 100 ] \
+  || { v "  !! dpkg manifest has ${nl} lines - the package db did not survive the root session (escapes eaten in transit?)"; fail=1; }
+v "  dpkg manifest: ${nl} packages"
 v "modules-load.d: $(SUDO tr '\n' ' ' < "${MNT}/root/etc/modules-load.d/r36max2.conf")"
 for d in "${MNT}/boot/rk3326-xifan-r36max2.dtb"; do
   v "FAT $(basename $d) gpio flags: $(SUDO dtc -I dtb -O dts "$d" 2>/dev/null | grep -E 'rumble-gpio|amux-a-gpios' | tr -s ' \t' ' ' | tr '\n' ' ')"
