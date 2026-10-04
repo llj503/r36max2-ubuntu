@@ -79,6 +79,10 @@ bridge_off() {
 
 bridge_on() {
     [ "$(systemctl is-active $BRIDGE 2>/dev/null)" = active ] && { echo "  bridge already active"; return 0; }
+    # Restore only what was actually running. The unit is BindsTo=weston.service, so a
+    # blind `systemctl start` here would also start the compositor - which is precisely
+    # what --kmsdrm is trying to avoid (weston on 7.2.8 can wedge the VOP permanently).
+    [ "$BRIDGE_WAS" = active ] || { echo "  bridge was $BRIDGE_WAS before ES ran, leaving it off"; return 0; }
     systemctl start $BRIDGE 2>/dev/null
     sleep 2
     echo "  joypad bridge back $(systemctl is-active $BRIDGE) (stick=mouse, keys=keyboard for desktop apps)"
@@ -91,7 +95,7 @@ watch_bridge() {
     # never notice ES going away.
     setsid sh -c '
         while pgrep -c emulationstatio >/dev/null 2>&1; do sleep 5; done
-        systemctl start '"$BRIDGE"' 2>/dev/null
+        [ "'"$BRIDGE_WAS"'" = active ] && systemctl start '"$BRIDGE"' 2>/dev/null
     ' >/dev/null 2>&1 &
 }
 
