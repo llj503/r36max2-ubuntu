@@ -4,11 +4,15 @@
 #
 #   bash scripts/require-arm64.sh "${BUILD}/image/system"
 #
-# Why this exists as its own step: the binfmt rule is runtime state in /proc, so
-# "my chroot worked an hour ago" is not something the pipeline may assume - an idle
-# WSL VM restart drops it.  Without a handler every chroot fails with "Exec format
-# error", and the scripts that ignored that kept writing config files and printed
-# ROOTFS BUILD DONE over a rootfs with nothing installed in it (measured 2026-10-04).
+# Why this exists as its own step, called more than once: the binfmt rule is runtime
+# state in /proc, and this WSL instance has no systemd as PID 1 (`systemctl` answers
+# "Host is down"), so neither systemd-binfmt nor binfmt-support restores the rule when
+# the VM comes back - an idle WSL timeout, or a `wsl --shutdown`, silently clears it.
+# Measured 2026-10-04: inside one rootfs-apt run the rule was there for the dpkg step
+# and gone by the account-creation chroot (Exec format error), and the old scripts that
+# ignored that failure still wrote their config files and printed DONE over an empty
+# rootfs.  Call this before every phase that execs out of the rootfs; the fast path is
+# one `chroot ... uname -m` and returns 0.
 set -u
 REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 ROOT=${1:?usage: require-arm64.sh <rootfs-dir>}

@@ -188,8 +188,15 @@ chroot "$1" /bin/sh -euc '
 '
 UEOF
   chmod 755 "${U}"
-  SUDO bash "${U}" "${R}" || { rm -f "${U}"; die "rootfs-apt: account setup failed inside the chroot"; }
+  # The binfmt rule can vanish mid-recipe (no systemd here to restore it after a WSL
+  # restart), and this is the second phase that execs arm64 binaries out of the tree -
+  # measured: dpkg worked, then this call died with Exec format error 6 seconds later.
+  SUDO bash "${ROOT}/scripts/require-arm64.sh" "${R}" ||
+    die "rootfs-apt: no arm64 handler before the account chroot"
+  SUDO bash "${U}" "${R}" 2>&1 | sed 's/^/      /'
+  arc=${PIPESTATUS[0]}
   rm -f "${U}"
+  [ "${arc}" = 0 ] || die "rootfs-apt: account setup failed inside the chroot (rc=${arc})"
   # The accounts chroot runs as root, so anything it creates inside the tree lands
   # root-owned - and every step after this one writes as the build user.  That is what
   # killed the first two runs here: `mkdir -p /etc/ssh/sshd_config.d` ran inside the
