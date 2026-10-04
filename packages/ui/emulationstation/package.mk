@@ -29,8 +29,15 @@ PKG_DEPENDS_TARGET="toolchain rootfs-apt"
 PKG_LONGDESC="EmulationStation front end (emulationstation-next, GLES3), cross-built."
 PKG_TOOLCHAIN="cmake-make"
 
+# -DGLES3=1 is real (options declared: GLES/GLES2/GLES3/GL) and cmake then reports
+# "Found OpenGLES3 ... libGLESv2.so".  -DGL_SYSTEM=1 was NOT: cmake warned
+# "Manually-specified variables were not used by the project: GL_SYSTEM", so it is
+# dropped rather than carried on as decoration.  CEC defaults to ON while the probe
+# says "Package 'libcec', required by 'virtual:world', not found" - this is an
+# RK3326 handheld with no HDMI, so turn it off instead of shipping a phantom
+# dependency.  FriBidi is absent too, and ES falls back to its own RTL reordering.
 PKG_CMAKE_OPTS_TARGET="-DGLES3=1 \
-  -DGL_SYSTEM=1 \
+  -DCEC=OFF \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_RULE_MESSAGES=OFF \
   -DCMAKE_VERBOSE_MAKEFILE=OFF"

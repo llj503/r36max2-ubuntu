@@ -32,7 +32,7 @@ R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   mesa-utils glmark2 libegl1 libgles2 libgbm1 \
   libgbm-dev libegl-dev libgles-dev libdrm-dev \
   weston wayland-protocols libwayland-dev libwayland-bin grim wf-recorder foot wofi kbd cmake \
-  libsdl2-dev libfreeimage-dev libavcodec-dev libavformat-dev libswscale-dev \
+  libsdl2-dev libsdl2-mixer-dev libfreeimage-dev libavcodec-dev libavformat-dev libswscale-dev \
   libcurl4-openssl-dev libasound2-dev libudev-dev libfreetype-dev libfmt-dev \
   rapidjson-dev libvlc-dev gettext"
 
