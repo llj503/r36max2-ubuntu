@@ -67,24 +67,36 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 
 ## 目录结构
 
-顶层按 [ROCKNIX/distribution](https://github.com/ROCKNIX/distribution) 的角色划分组织：
+顶层按 [ROCKNIX/distribution](https://github.com/ROCKNIX/distribution) 的角色划分组织，
+仓库里只留**当前这一套（v20 / 7.2.8）**在用的东西，共 140 个文件：
 
 ```
 projects/r36max2/   板子定义：dt/ 设备树（含 usbhost/gadget 变体、DRAM timing）、patches/ 内核补丁集
 packages/           装进 rootfs、跑在板子上的 11 个包（键鼠桥、osk、weston 会话、ES 启动器、
                     bootlog、状态页、配网、扩根、固件切换、usb-gadget、gpu-demos）
-scripts/            宿主机流水线：取内核、打补丁、编译、装 rootfs、打包镜像、lint
-tools/<子系统>/      调试仪器，按 input/gpu/display/wifi/audio/wayland/emulationstation/... 分，
-                    每层再分 diagnostics（只读）/ runtime（改板子状态）/ verify（判定）
+scripts/            当前流水线：取内核、打补丁、编译、装 rootfs、打包镜像、lint（25 个）
+tools/<子系统>/      被文档点名为证据来源的调试仪器（19 个），仍按
+                    diagnostics（只读）/ runtime（改板子状态）/ verify（判定）分层
 config/rootfs/      直接落进 rootfs 的配置
 distributions/      每一版镜像的 sha256 与发布记录（*.img.xz 本体不入库）
 documentation/      上面那些正文，外加最初的移植方案与 v19 那版的刷写记录
-archive/            被取代的历史版本，只作记录（见 archive/README.md）
 build/              本机 scratch，不入库：第三方源码、CMake 中间产物、wifi-cred.txt
+```
+
+历史上那些一次性探测脚本、编号草稿和被取代的版本流水线（约 360 个文件，原先摊在 `build/`
+和后来的 `tools/`、`archive/` 里）已经不在工作树中。**没有丢**：它们都在 git 历史里，
+用下面两条命令就能列出来并取回任意一个。判断"哪些算当前一套"的标准是文档 ——
+`documentation/` 与 `README.md` 点名的脚本一律保留，其余按依赖闭包（`pack-v20.sh`
+需要哪些前置就保留哪些）补齐。
+
+```bash
+git log --diff-filter=D --name-only --format=%h | less   # 哪次提交删了哪些文件
+git show 6dd081a:tools/gpu/diagnostics/k72-vop-now.sh    # 取回某个被删的脚本
 ```
 
 改完东西先跑 `make lint`（= `bash scripts/lint.sh`）：按 shebang 找出所有 shell 与 python
 脚本做语法检查，并确认没有文件被放回 `build/`。GitHub Actions 跑的就是它。
 
-脚本里的绝对路径仍写作 `/mnt/e/ubuntu/...`（原作者的 WSL 构建机盘符），换机器时换成你的
-仓库路径即可；`tools/` 与 `archive/` 里的一次性脚本没有逐一改写它们写死的输出目录。
+保留下来的脚本里，绝对路径仍写作 `/mnt/e/ubuntu/...`（原作者的 WSL 构建机盘符），
+换机器时换成你的仓库路径即可。
+

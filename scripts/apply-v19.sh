@@ -198,4 +198,4 @@ rm -f "$R/var/lib/dbus/machine-id"
 printf '# static resolver: public first (works on any network), router second (LAN names)\nnameserver 223.5.5.5\nnameserver 192.168.31.1\n' > "$R/etc/resolv.conf"
 echo "  resolv.conf nameservers: $(grep -c '^nameserver' "$R/etc/resolv.conf")"
 du -sh "$R" | sed 's/^/  staging rootfs: /'
-echo "=== apply-v19 done; next: V=v19 bash /mnt/e/ubuntu/scripts/pack-v10.sh ==="
+echo "=== apply-v19 done; next: V=v20 bash /mnt/e/ubuntu/scripts/pack-v20.sh ==="

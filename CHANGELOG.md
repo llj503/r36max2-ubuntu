@@ -50,3 +50,37 @@ README 原本 640 行，把所有移植细节堆在一个文件里。按 ROCKNIX
 `/E:/ubuntu/...` 的本地路径链接（改为指向 `distributions/` 的校验记录）。全仓 markdown
 链接检查：0 坏链。
 
+## 只保留当前一套（第三步）
+
+把"活跃目录里同时摆着 v8 到 v20 每一代脚本"的状态收干净：**删掉 363 个文件，仓库从 503 个
+降到 140 个**。删除只发生在工作树，历史完整 —— 任意文件可用 `git show 6dd081a:<路径>` 取回，
+删除清单见 `git log --diff-filter=D --name-only`。
+
+删掉的是：`archive/` 全部（84）、`tools/` 里没被文档点名的 204 个一次性探测脚本、
+`scripts/` 里 75 个不属于当前流水线的脚本（含 v19 的打包器 `pack-v10.sh`）。
+
+留下 140 个的判据（按优先级）：
+
+1. **文档点名的保留**。`documentation/` 与 README 一共引用 54 个仓库路径，它们是移植记录的
+   证据来源，删了文档就指向空气 —— 包括 19 个 `tools/`。
+2. **从 v20 入口做依赖闭包**。`v20-*.sh`、`apply-wayland.sh`、`pack-v20.sh`、`build-*.sh`、
+   `apply-mainline.sh`、`k72-prepare.sh`、`lint.sh`、`git-prepare.sh`、`git-secretscan.sh`
+   等 25 个 `scripts/`。
+3. `packages/` `projects/` `config/` `distributions/` 全部保留（装进系统的东西、板子定义、
+   发布记录本来就只有当前一套）。
+
+一个必须写清楚的事实：**6.12.79 不是遗留支线**。`pack-v20.sh` 里写死
+`K6=/root/r36/linux-6.12.79`，v20 镜像同时装 `lib/modules/6.12.79` 和 `lib/modules/7.2.8`
+两棵模块树、生成 `boot-612.ini` 作回退项，`v20-stage72.sh` 还要从 6.12 树里取 dtb。
+所以 `apply-mainline.sh` 与 `build-all.sh` 是**当前镜像的构建前置**，即使默认内核已经是
+7.2.8 也必须留着。要真正只发 7.2.8，那是改打包流程 + 出 v21 的事，不是清理仓库文件的事。
+
+配套改动：`BUILD.md` 重写成单一的 v20 现行流程（原来的"从零构建"五步是 v19/6.12 的走法，
+和 v20 顺序并列摆着会误导人）；`apply-v19.sh` 结尾"下一步"提示从 `pack-v10.sh` 改指
+`pack-v20.sh`；README 的目录结构去掉 `archive/` 并写清删除物如何取回。
+
+验证：`make lint` 通过（46 shell / 9 python，0 失败）；markdown 链接 0 坏链；剩余 13 处
+"指向不存在路径"的匹配逐条看过，全是通配（`scripts/v20-*.sh`）、内核自带的 `scripts/config`、
+GitHub codeload 的 `/archive/` URL，以及本变更日志里对历史目录的描述。
+
+
