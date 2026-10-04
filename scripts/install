@@ -49,9 +49,16 @@ pkg_lock "${PKG_NAME}:${TARGET}" "install" "${PARENT_PKG}"
 # deep hash: scripts/build already dropped it, so an install stamp that only checks
 # existence would keep the FIRST merged copy of a recipe forever and silently ship
 # stale files after every recipe edit (which is how this build is driven).
-STAMP=${STAMPS}/${PKG_NAME}/install_${TARGET}
+# A virtual package owns no tree of its own - being "installed" for it means exactly
+# that its dependency walk ran.  Sharing the early exit below with real packages made
+# the whole build inert: once `make image` had succeeded, every later run skipped the
+# dependency loop entirely, merged and rebuilt nothing (0 CLEAN / 0 UNPACK / 0 INSTALL
+# lines in the log) and re-packed the previous rootfs, so a committed fix appeared to
+# do nothing at all.
+STAMP=
+[ "${PKG_SECTION}" != "virtual" ] && STAMP=${STAMPS}/${PKG_NAME}/install_${TARGET}
 PKG_DEEPHASH=$(calculate_stamp)
-if [ -f ${STAMP} ]; then
+if [ -n "${STAMP}" ] && [ -f "${STAMP}" ]; then
   . ${STAMP}
   if [ "${PKG_DEEPHASH}" = "${STAMP_PKG_DEEPHASH}" ]; then
     pkg_lock_status "UNLOCK" "${PKG_NAME}:${TARGET}" "install" "already installed"
@@ -208,8 +215,10 @@ fi
 
 release_update_lock
 
-for i in PKG_NAME PKG_DEEPHASH; do
-  echo "STAMP_${i}=\"${!i}\"" >>${STAMP}
-done
+if [ -n "${STAMP}" ]; then
+  for i in PKG_NAME PKG_DEEPHASH; do
+    echo "STAMP_${i}=\"${!i}\"" >>${STAMP}
+  done
+fi
 
 pkg_lock_status "UNLOCK" "${PKG_NAME}:${TARGET}" "install" "installed"

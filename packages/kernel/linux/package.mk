@@ -18,8 +18,14 @@ PKG_URL="https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${PKG_VERSION}.tar.x
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="Mainline kernel ${PKG_VERSION} for the R36 Max 2."
 
-# board patch dir + dtb list change -> rebuild the kernel
-PKG_STAMP="${KERNEL_TARGET} ${R36_DTBS}"
+# board patch dir + dtb list change -> rebuild the kernel.  The hash of the project
+# .config is folded in deliberately: calculate_stamp() covers ${PKG_DIR} and the
+# project's patches/packages/${PKG_NAME} directories, and
+# ${PROJECT_DIR}/${PROJECT}/linux/linux.aarch64.conf is none of those - so editing the
+# kernel config changed no hash at all and the tree kept booting a kernel built from
+# the old .config.  That is why the RD_GZIP fix sat in git while the card went on
+# resetting: the rebuilt image contained the same Image as before.
+PKG_STAMP="${KERNEL_TARGET} ${R36_DTBS} $(find ${PROJECT_DIR}/${PROJECT}/linux -name '*.conf' -print0 2>/dev/null | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
 
 PKG_PATCH_DIRS="board"
 
