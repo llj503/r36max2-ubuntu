@@ -48,12 +48,16 @@ make source           # 预取全部输入：内核 7.2.9、busybox、joypad、a
 ## 2) 工具链 → 项目 → 镜像
 
 ```bash
-make build PKG=toolchain:host  # gmp/mpfr/mpc/binutils/gcc(:host) → build.*/toolchain
+make build PKG=toolchain:host  # gmp/mpfr/mpc/binutils(:host) → build.*/toolchain（不含 gcc）
                                # gcc 单遍构建：sysroot 由 rootfs-base 包从 ubuntu-base + pinned
                                # -dev deb 填充（这一步不需要 root）
 make build PKG=image           # 整棵依赖图：内核 7.2.9 + joypad/aic8800 模块 + rootfs 各层 +
                                # 设备包 + gpu-demos + busybox + initramfs
 ```
+
+实测：只跑 `PKG=toolchain:host` 时 `toolchain/bin` 里是 binutils 那批交叉工具和 `host-gcc`，
+**没有** `aarch64-r36max2-linux-gnu-gcc`，`.stamps` 里也没有 gcc —— 不是失败，是 gcc 挂在
+`packages/virtual/toolchain/package.mk` 的 `PKG_DEPENDS_TARGET` 上。所以入口直接跑 `make image`。
 
 `make build PKG=image` 里**唯一需要 sudo 的步骤**是 `rootfs-apt`（chroot 里跑 apt），会提示一次
 密码。快照时间点写在 `distributions/rk3326/options` 的 `APT_SNAPSHOT` —— 升级它是显式、可评审
