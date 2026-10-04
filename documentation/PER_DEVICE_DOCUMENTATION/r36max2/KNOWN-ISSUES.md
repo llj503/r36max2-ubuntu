@@ -17,6 +17,16 @@
   `~/.emulationstation/themes/art-book-next`、`es_settings.cfg` 的 `ThemeSet`、
   `/usr/local/bin/r36-es` 和 `r36-osk` 的键名别名修正。要交给别人用得再出一版镜像（v21），
   把上面这些折进 `scripts/apply-*.sh` 的流程 —— **别只改卡上，重刷就丢**。
+- **v20 镜像里 `wifi.txt` 这条通道是死的**（2026-10-04 实测定案）：`/usr/local/sbin/r36-wifi-setup`
+  在（4846 B，10-02 18:13），但 **`r36-wifi-setup.service`/`.timer` 从未装进
+  `/etc/systemd/system/`**，两个 `*.wants/` 软链里也没有它 —— 没有任何东西去运行它，所以两轮开机
+  `BOOT:\wifi-status.txt` 一个字节都没生成。当时还误判过两次：一次怪 `WPA3-SAE`（后来你把 2.4G
+  改成 WPA2 了），一次怪 `r36-status-screen` 的只读挂载与它冲突（那句 `Can't mount, would change
+  RO state` 确实存在、也确实修了，但它不是这次的堵点）。出镜像那会儿用的 `apply-v19.sh` 还没带
+  第 91 行那句 cp，所以是**历史镜像**的问题：现在的 `scripts/apply-v19.sh` 会装这两个单元，
+  v21 构建完请在卡上确认 `systemctl is-enabled r36-wifi-setup.timer` 是 `enabled`。
+  这张卡已由 usbipd 直通 WSL 手工补装并顺带把烧死的旧网络 `Xiaomi_4FD3` 换成 `360JDCWiFi-E378`
+  （`psk` 写的是 PBKDF2 哈希，0600），原件在卡上 `/root/r36-backup-20261004/`。
 - **ES 还没有真 ROM**：现在跑的 `demo` 系统是假的（"启动"= 写一个标记文件），用来验证
   列表→启动→回列表的回路。真 ROM 在另一张 128 GB 卡上，而那张卡是**绝对不碰**的
   （上面有能用的 ArkOS + ROMS），所以要么由他把 ROM 拷到 64 GB 卡的根分区（还有 ~51 GB 空闲），
