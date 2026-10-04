@@ -7,7 +7,7 @@ PKG_VERSION="1.3.1"
 PKG_SHA256="ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8"
 PKG_LICENSE="LGPL"
 PKG_SITE="http://www.multiprecision.org/"
-PKG_URL="https://ftpmirror.gnu.org/mpc/${PKG_NAME}-${PKG_VERSION}.tar.gz"
+PKG_URL="https://ftp.gnu.org/gnu/mpc/${PKG_NAME}-${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_HOST="gmp:host mpfr:host"
 PKG_LONGDESC="C library for arbitrary precision complex number arithmetic."
 
