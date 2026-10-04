@@ -2,8 +2,9 @@
 # Apply Rocknix's "mainline" patch layer (polldev, gpiolib revert, pwm helper, adc-keys redirect)
 # to the already device-patched tree, verifying each step.
 set -u
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 K=/root/r36/linux-6.12.79
-M=/mnt/e/ubuntu/build/rocknix/patches-mainline
+M=$REPO/build/rocknix/patches-mainline
 cd "$K" || exit 1
 
 echo "=== dry-run all mainline patches ==="

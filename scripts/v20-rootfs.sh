@@ -10,13 +10,14 @@
 #   * a tree can only be built for one kernel at a time, so "which .ko is this"
 #     must be answered by vermagic + sha, never by the filename or the mtime.
 set -uo pipefail
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 R=/root/r36/rootfs
 K6=/root/r36/linux-6.12.79
 K7=/root/r36/linux-7.2.8
 OUT=/root/r36/out
 OUT72=/root/r36/out72
-AJ=/mnt/e/ubuntu/artifacts/joypad
-AA=/mnt/e/ubuntu/artifacts/aic72
+AJ=$REPO/artifacts/joypad
+AA=$REPO/artifacts/aic72
 WSLNS=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf)
 
 echo "=== [1] 7.2.8 module tree ==="

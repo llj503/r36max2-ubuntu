@@ -16,6 +16,7 @@
 #   TREE=es   bash scripts/k72-esrn-autorun.sh read    # full phase-A transcript
 #   PHASE=B TREE=es bash scripts/k72-esrn-autorun.sh arm   # ask for the deeper phase
 set -uo pipefail
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 PW=ubuntu
 DEV=${DEV:-192.168.31.209}
 # TREE=es -> batocera's emulationstation (desktop GL); TREE=esrn -> ROCKNIX's
@@ -51,7 +52,7 @@ echo "  (transcript also in /tmp/es-smoke-$PHASE.txt)"
 EOS
   ;;
 arm)
-  timeout 60 sshpass -p $PW scp -o ConnectTimeout=25 /mnt/e/ubuntu/tools/emulationstation/verify/es-smoke-device.sh root@$DEV:/root/es-smoke-device.sh >/dev/null 2>&1 \
+  timeout 60 sshpass -p $PW scp -o ConnectTimeout=25 $REPO/tools/emulationstation/verify/es-smoke-device.sh root@$DEV:/root/es-smoke-device.sh >/dev/null 2>&1 \
     || { echo "!! push of es-smoke-device.sh failed"; exit 1; }
   echo "  pushed /root/es-smoke-device.sh"
   timeout 60 sshpass -p $PW ssh -o ConnectTimeout=25 root@$DEV 'cat > /root/es-watch.sh' <<'EOW'

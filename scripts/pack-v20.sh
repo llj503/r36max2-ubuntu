@@ -11,11 +11,12 @@
 # module vermagic per kernel, dtb gpio polarity flags, no credentials, no baked
 # SSH host keys, empty machine-id, weston not enabled.
 set -euo pipefail
-K6=/root/r36/linux-6.12.79
-K7=/root/r36/linux-7.2.8
-ROOT=/root/r36/rootfs
-OUT=/root/r36/out
-BLOBS=/mnt/e/ubuntu/artifacts/arkos
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+K6=${K6:-/root/r36/linux-6.12.79}
+K7=${K7:-/root/r36/linux-7.2.8}
+ROOT=${ROOT:-/root/r36/rootfs}
+OUT=${OUT:-/root/r36/out}
+BLOBS=${BLOBS:-$REPO/artifacts/arkos}
 V="${V:-v20}"
 IMG="$OUT/r36max2-ubuntu-${V}.img"
 P2SECTORS=4194304                     # 2 GiB root partition
@@ -215,7 +216,7 @@ echo "=== [8] close it out and compress ==="
 sync; umount "$MNT/root"; umount "$MNT/boot"
 e2fsck -fy "${LOOP}p2" >/dev/null 2>&1 || true
 sync; losetup -d "$LOOP"
-time xz -T0 -6 -c "$IMG" > /mnt/e/ubuntu/out/r36max2-ubuntu-${V}.img.xz
-cd /mnt/e/ubuntu/out && sha256sum r36max2-ubuntu-${V}.img.xz | tee r36max2-ubuntu-${V}.img.xz.sha256
+time xz -T0 -6 -c "$IMG" > $REPO/distributions/r36max2-ubuntu-${V}.img.xz
+cd $REPO/distributions && sha256sum r36max2-ubuntu-${V}.img.xz | tee r36max2-ubuntu-${V}.img.xz.sha256
 ls -la "r36max2-ubuntu-${V}.img.xz"
 echo "=== V20 PACK DONE ==="

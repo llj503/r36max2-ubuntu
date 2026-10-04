@@ -15,6 +15,7 @@ Two things a shared image must not carry:
    `ssh-keygen -A` (sshd refuses to start with no keys, so it must run before
    ssh.service).
 """
+from pathlib import Path
 import glob
 import os
 import re
@@ -22,7 +23,8 @@ import subprocess
 import sys
 
 R = os.environ.get("R", "/root/r36/rootfs")
-CRED = "/mnt/e/ubuntu/build/wifi-cred.txt"
+REPO = Path(__file__).resolve().parents[1]
+CRED = f"{REPO}/build/wifi-cred.txt"
 
 UNIT = """[Unit]
 Description=Generate fresh SSH host keys on first boot

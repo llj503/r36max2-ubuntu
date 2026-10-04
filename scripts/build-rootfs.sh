@@ -1,12 +1,13 @@
 #!/bin/bash
 # Build the Ubuntu 26.04 rootfs for the R36 Max 2 (v2: http mirror, mkdir -p, module metadata).
 set -u
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 ROOT=/root/r36/rootfs
 OUT=/root/r36/out
 KDIR=/root/r36/linux-6.12.79
 KVER=$(cat /root/r36/kversion 2>/dev/null || echo 6.12.79)
-TARBALL=/mnt/e/ubuntu/downloads/ubuntu-base-26.04.1-base-arm64.tar.gz
-CRED=/mnt/e/ubuntu/build/wifi-cred.txt
+TARBALL=$REPO/downloads/ubuntu-base-26.04.1-base-arm64.tar.gz
+CRED=$REPO/build/wifi-cred.txt
 # R36_BAKE_WIFI=0 builds an image with NO credentials in it - that is the mode
 # to use before handing the image to somebody else; they then drop wifi.txt on
 # the BOOT partition (see r36-wifi-setup).  Default keeps the builder's own
@@ -88,7 +89,7 @@ cp -v "$KDIR/modules.order" "$KDIR/modules.builtin" "$KDIR/modules.builtin.modin
 
 case "$KVER" in
   6.12.79) JPDIR=/root/r36/joypad/src;              JPSFX="" ;;
-  *)       JPDIR=/mnt/e/ubuntu/artifacts/joypad;    JPSFX="-$KVER" ;;
+  *)       JPDIR=$REPO/artifacts/joypad;    JPSFX="-$KVER" ;;
 esac
 for m in rocknix-singleadc-joypad rocknix-joypad; do
   src="$JPDIR/$m$JPSFX.ko"
@@ -100,7 +101,7 @@ done
 cp -v "$KDIR/net/wireless/cfg80211.ko" "$ROOT/lib/modules/$KVER/kernel/net/wireless/" 2>/dev/null
 # the radxa-pkg AIC tree, rebuilt for THIS kernel (7.2 needs
 # projects/r36max2/patches/aic8800-7.2.8-compat.patch applied with: patch -p1 -d drivers -i ...)
-AICDIR=${AIC_STAGED:-/mnt/e/ubuntu/artifacts/aic72}
+AICDIR=${AIC_STAGED:-$REPO/artifacts/aic72}
 for m in aic8800_fdrv aic_load_fw; do
   src=""
   for cand in "$AICDIR/$m-$KVER.ko" "$KDIR/../$m.ko"; do

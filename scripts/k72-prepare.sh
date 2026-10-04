@@ -4,8 +4,9 @@
 # features are upstream in 7.2), carry the two Rocknix-only drivers we still
 # need (panel-generic-dsi), and wire our board dts in.
 set -uo pipefail
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 K=/root/r36/linux-7.2.8
-R=/mnt/e/ubuntu/build/rocknix
+R=$REPO/build/rocknix
 X=ARCH=arm64
 CROSS=CROSS_COMPILE=aarch64-linux-gnu-
 cd "$K" || exit 1
@@ -55,10 +56,10 @@ config DRM_PANEL_GENERIC_DSI
 KC
 
 echo "=== install our board dts ==="
-cp -f /mnt/e/ubuntu/projects/r36max2/dt/rk3326-xifan-r36max2.dts \
-      /mnt/e/ubuntu/projects/r36max2/dt/rk3326-xifan-r36max2-usbhost.dts \
-      /mnt/e/ubuntu/projects/r36max2/dt/rk3326-xifan-r36max2-gadget.dts \
-      /mnt/e/ubuntu/projects/r36max2/dt/rk3326-xifan-r36max2-dram-timing.dtsi \
+cp -f $REPO/projects/r36max2/dt/rk3326-xifan-r36max2.dts \
+      $REPO/projects/r36max2/dt/rk3326-xifan-r36max2-usbhost.dts \
+      $REPO/projects/r36max2/dt/rk3326-xifan-r36max2-gadget.dts \
+      $REPO/projects/r36max2/dt/rk3326-xifan-r36max2-dram-timing.dtsi \
       arch/arm64/boot/dts/rockchip/
 M=arch/arm64/boot/dts/rockchip/Makefile
 for d in rk3326-xifan-r36max2 rk3326-xifan-r36max2-usbhost rk3326-xifan-r36max2-gadget; do

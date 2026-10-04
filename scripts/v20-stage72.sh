@@ -3,11 +3,12 @@
 # image build has a single, checked source: Image, dtbs, modules tree, and the
 # four out-of-tree .ko (AIC WiFi for 7.2.8, gpiod joypad for 7.2.8).
 set -uo pipefail
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 K7=/root/r36/linux-7.2.8
 OUT=/root/r36/out
 OUT72=/root/r36/out72
-AJ=/mnt/e/ubuntu/artifacts/joypad
-AA=/mnt/e/ubuntu/artifacts/aic72
+AJ=$REPO/artifacts/joypad
+AA=$REPO/artifacts/aic72
 
 echo "=== [1] kernel + dtbs ==="
 mkdir -p "$OUT/boot"

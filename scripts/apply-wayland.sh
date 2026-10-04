@@ -10,8 +10,9 @@
 # the VOP (see documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md) and a card that boots straight into a
 # frozen panel is a card nobody can debug without a serial cable they do not have.
 set -euo pipefail
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 R=${R:-/root/r36/rootfs}
-SRC=/mnt/e/ubuntu/build
+SRC=$REPO/build
 WSLNS=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf)
 
 echo "=== rootfs: $R ($(du -sh "$R" 2>/dev/null | cut -f1)) ==="

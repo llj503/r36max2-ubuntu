@@ -1,8 +1,9 @@
 #!/bin/bash
 # Copy the driver source to E: so I can read/edit it with proper tooling.
 set -e
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 SRC=/root/r36/wifi/aic8800dc-linux-patched-main/drivers/aic8800
-DST=/mnt/e/ubuntu/build/aic-src
+DST=$REPO/build/aic-src
 rm -rf "$DST"; mkdir -p "$DST"
 cp -a "$SRC"/. "$DST"/
 find "$DST" -name '*.o' -delete; find "$DST" -name '*.ko' -delete; find "$DST" -name '*.mod*' -delete

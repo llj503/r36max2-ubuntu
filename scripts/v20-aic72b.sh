@@ -6,13 +6,14 @@
 # to drivers/) -> build against 7.2.8 -> stage -> prove identity with the bytes
 # the running card is using for WiFi.
 set -uo pipefail
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 PW=ubuntu
 DEV=${DEV:-192.168.31.209}
 K7=/root/r36/linux-7.2.8
 AIC=/root/r36/aic8800-radxa/src/USB/driver_fw
-PATCH=/mnt/e/ubuntu/projects/r36max2/patches/aic8800-7.2.8-compat.patch
+PATCH=$REPO/projects/r36max2/patches/aic8800-7.2.8-compat.patch
 OUT72=/root/r36/out72
-AA=/mnt/e/ubuntu/artifacts/aic72
+AA=$REPO/artifacts/aic72
 T=/tmp/aic72
 
 echo "=== [0] remove the mis-staged 6.12 modules from the 7.2.8 tree ==="

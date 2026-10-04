@@ -2,6 +2,7 @@
 # Build mainline 6.12.79 for the XiFan R36 Max 2: Image + dtbs + modules,
 # then the two out-of-tree modules (rocknix joypad, AIC8800DC WiFi).
 set -u
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 K=${K:-/root/r36/linux-6.12.79}
 OUT=${OUT:-/root/r36/out}
 X=ARCH=arm64
@@ -13,9 +14,9 @@ JOYPAD=/root/r36/joypad/src
 # *compiles* against new kernels but fails at runtime (SCANU command timeout,
 # then a jump through a garbage pointer in cmd_mgr_msgind) - do not use it.
 AIC=${AIC:-/root/r36/aic8800-radxa/src/USB/driver_fw}
-AIC_PATCH7=/mnt/e/ubuntu/projects/r36max2/patches/aic8800-7.2.8-compat.patch
+AIC_PATCH7=$REPO/projects/r36max2/patches/aic8800-7.2.8-compat.patch
 KREL=$(cat "$K/include/config/kernel.release" 2>/dev/null || echo unknown)
-JP=/mnt/e/ubuntu/build/joypad
+JP=$REPO/build/joypad
 
 mkdir -p "$OUT"
 cd "$K" || exit 1
@@ -51,7 +52,7 @@ for p in "$JP"/001-legacy-kernel-platform-remove-returns-int.patch \
          "$JP"/003-export-joypad-input-g-and-vfs-ns.patch \
          "$JP"/0001-add-xifan-device-vibrator.patch \
          "$JP"/0002-add-vibration.patch \
-         /mnt/e/ubuntu/projects/r36max2/patches/joypad-gpiod.patch; do
+         $REPO/projects/r36max2/patches/joypad-gpiod.patch; do
   [ -f "$p" ] || continue
   if patch -p1 --dry-run -s -i "$p" >/dev/null 2>&1; then
     patch -p1 -s -i "$p" >/dev/null 2>&1 && echo "patched: $(basename "$p")"

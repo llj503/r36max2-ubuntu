@@ -7,9 +7,10 @@
 # and the two GPU demo programs, so this script adds those plus a Makefile and
 # a one-shot r36-glcheck.
 set -eu
+REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 R=/root/r36/rootfs
-SRC=/mnt/e/ubuntu/build
-GL=/mnt/e/ubuntu/artifacts/gl
+SRC=$REPO/build
+GL=$REPO/artifacts/gl
 K=/root/r36/linux-6.12.79
 RDIR=$K/arch/arm64/boot/dts/rockchip
 OUT=/root/r36/out
@@ -198,4 +199,4 @@ rm -f "$R/var/lib/dbus/machine-id"
 printf '# static resolver: public first (works on any network), router second (LAN names)\nnameserver 223.5.5.5\nnameserver 192.168.31.1\n' > "$R/etc/resolv.conf"
 echo "  resolv.conf nameservers: $(grep -c '^nameserver' "$R/etc/resolv.conf")"
 du -sh "$R" | sed 's/^/  staging rootfs: /'
-echo "=== apply-v19 done; next: V=v20 bash /mnt/e/ubuntu/scripts/pack-v20.sh ==="
+echo "=== apply-v19 done; next: V=v20 bash $REPO/scripts/pack-v20.sh ==="
