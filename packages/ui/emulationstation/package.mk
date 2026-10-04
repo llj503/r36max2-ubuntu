@@ -36,14 +36,33 @@ PKG_CMAKE_OPTS_TARGET="-DGLES3=1 \
   -DCMAKE_VERBOSE_MAKEFILE=OFF"
 
 post_unpack() {
-  # the archive tarball has no submodules; pugixml is pinned in .gitmodules
-  local PUGI_REV="$(sed -n 's/.*pugixml.*revision = \([0-9a-f]*\).*/\1/p' ${PKG_BUILD}/.gitmodules | head -1)"
-  [ -n "${PUGI_REV}" ] || die "emulationstation: cannot read pugixml pin from .gitmodules"
-  curl -fsSL --retry 3 -o ${PKG_BUILD}/pugixml.tar.gz \
-    "https://github.com/zeux/pugixml/archive/${PUGI_REV}.tar.gz" ||
-    die "emulationstation: pugixml download failed"
+  # A GitHub archive carries no submodule content: external/pugixml unpacks as an
+  # empty directory (id3v2lib, libcheevos and nanosvg are real trees), and
+  # .gitmodules has no "revision" line to read - the pin lives in the commit's
+  # gitlink, which is why this used to die with "cannot read pugixml pin".  The
+  # value below came from the tree itself:
+  #   git ls-tree ${PKG_VERSION} external/pugixml
+  #   -> 160000 commit 61c944895e071872370219cadade8423dc6e04dc external/pugixml
+  # and was verified against codeload: 583444 B, sha256 below, with the
+  # CMakeLists.txt that external/CMakeLists.txt's add_subdirectory("pugixml")
+  # requires (that branch is taken because USE_SYSTEM_PUGIXML defaults to OFF).
+  local PUGI_COMMIT="61c944895e071872370219cadade8423dc6e04dc"
+  local PUGI_SHA256="d82e28c844f46165bdb2c160466073087888ec81ea87fbe66e3dc7f36aa5c835"
+  local TARBALL="${SOURCES}/${PKG_NAME}/pugixml-${PUGI_COMMIT}.tar.gz"
+
+  if [ ! -f "${TARBALL}" ]; then
+    mkdir -p "${SOURCES}/${PKG_NAME}"
+    curl -fsSL --retry 3 -o "${TARBALL}" \
+      "https://codeload.github.com/zeux/pugixml/tar.gz/${PUGI_COMMIT}" ||
+      die "emulationstation: cannot fetch pugixml ${PUGI_COMMIT}"
+  fi
+  echo "${PUGI_SHA256}  ${TARBALL}" | sha256sum -c --status ||
+    die "emulationstation: pugixml tarball does not match its pinned sha256"
+
   mkdir -p ${PKG_BUILD}/external/pugixml
-  tar -xzf ${PKG_BUILD}/pugixml.tar.gz -C ${PKG_BUILD}/external/pugixml --strip-components=1
+  tar -xzf "${TARBALL}" -C ${PKG_BUILD}/external/pugixml --strip-components=1
+  [ -f ${PKG_BUILD}/external/pugixml/CMakeLists.txt ] ||
+    die "emulationstation: external/pugixml has no CMakeLists.txt - add_subdirectory would fail"
 }
 
 makeinstall_target() {
