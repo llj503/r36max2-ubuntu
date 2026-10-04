@@ -18,7 +18,18 @@ v21 起，构建走 ROCKNIX 式框架：**先自建交叉工具链，再按 pack
    cpio --reproducible）；每版镜像附完整 manifest。apt 底座是"语义可复现"
    （dpkg 清单随镜像发布），字节级一致不承诺 —— 诚实边界。
 
-## 0) 前置：宿主必须能执行 arm64，而且构建目录必须在 ext4 上
+## 0) 前置：宿主必须能执行 arm64，构建用户要有免密 sudo，仓库必须放在 ext4 上
+
+**构建用户需要 `NOPASSWD` sudo。** 框架的 `SUDO()` 是这样选的：
+`command -v wsl.exe && ! sudo -n true` 就走 `wsl.exe -u root -- ...`（在 WSL 里再开一个
+嵌套会话），否则走 `sudo`。没有免密 sudo 时它就选前者，而**嵌套 wsl.exe 会话会把 stdout
+和退出码弄丢** —— 实测：同一个 `require-arm64.sh`，几分钟前还打印 5 行并成功，到建账号那
+一步再调它就"零输出 + 非零返回"，看起来像规则没了，其实那条命令根本没跑起来。修法一行：
+
+```bash
+echo 'llj503 ALL=(ALL) NOPASSWD: ALL' | tee /etc/sudoers.d/99-r36-build && chmod 440 /etc/sudoers.d/99-r36-build
+visudo -cf /etc/sudoers.d/99-r36-build        # 必须 parsed OK，写坏了你自己就进不去 sudo 了
+```
 
 **不要把仓库放在 `/mnt/f`（drvfs/9p）上构建。** 实测：`scripts/build` 在每个包安装完要做
 sysroot 重定位，其中一步是
