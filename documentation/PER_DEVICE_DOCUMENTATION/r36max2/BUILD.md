@@ -48,14 +48,14 @@ make source           # 预取全部输入：内核 7.2.9、busybox、joypad、a
 ## 2) 工具链 → 项目 → 镜像
 
 ```bash
-make build toolchain:host   # gmp/mpfr/mpc/binutils/gcc(:host) → build.*/toolchain
-                            # gcc 单遍构建：sysroot 由 rootfs-base 包从 ubuntu-base + pinned
-                            # -dev deb 填充（这一步不需要 root）
-make build image            # 整棵依赖图：内核 7.2.9 + joypad/aic8800 模块 + rootfs 各层 +
-                            # 设备包 + gpu-demos + busybox + initramfs
+make build PKG=toolchain:host  # gmp/mpfr/mpc/binutils/gcc(:host) → build.*/toolchain
+                               # gcc 单遍构建：sysroot 由 rootfs-base 包从 ubuntu-base + pinned
+                               # -dev deb 填充（这一步不需要 root）
+make build PKG=image           # 整棵依赖图：内核 7.2.9 + joypad/aic8800 模块 + rootfs 各层 +
+                               # 设备包 + gpu-demos + busybox + initramfs
 ```
 
-`make build image` 里**唯一需要 sudo 的步骤**是 `rootfs-apt`（chroot 里跑 apt），会提示一次
+`make build PKG=image` 里**唯一需要 sudo 的步骤**是 `rootfs-apt`（chroot 里跑 apt），会提示一次
 密码。快照时间点写在 `distributions/rk3326/options` 的 `APT_SNAPSHOT` —— 升级它是显式、可评审
 的动作，装完的 dpkg 清单会随镜像发布。
 
@@ -64,10 +64,10 @@ make build image            # 整棵依赖图：内核 7.2.9 + joypad/aic8800 �
 单独重建某一项：
 
 ```bash
-make build linux              # 只编内核（Image + 三份 dtb + 模块树）
-make build rocknix-joypad     # 只编 joypad 模块（自动带上它依赖的内核/工具链）
-make build gpu-demos          # 只编 EGL/GLES2 demo（交叉编译，替代 v20 的预编译 binaries）
-make build emulationstation   # 只编 ES
+make build PKG=linux              # 只编内核（Image + 三份 dtb + 模块树）
+make build PKG=rocknix-joypad     # 只编 joypad 模块（自动带上它依赖的内核/工具链）
+make build PKG=gpu-demos          # 只编 EGL/GLES2 demo（交叉编译，替代 v20 的预编译 binaries）
+make build PKG=emulationstation   # 只编 ES
 ```
 
 ## 3) 打包出镜像
