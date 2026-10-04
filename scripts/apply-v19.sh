@@ -9,12 +9,12 @@
 set -eu
 REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 R=/root/r36/rootfs
-SRC=$REPO/build
+PKG=$REPO/packages
+TOOLSD=$REPO/tools/capture
+CFG=$REPO/config/rootfs
 GL=$REPO/artifacts/gl
-K=/root/r36/linux-6.12.79
-RDIR=$K/arch/arm64/boot/dts/rockchip
 OUT=/root/r36/out
-KVER=6.12.79
+KVER=7.2.8
 WSLNS=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf)
 
 # keep the exact set used on the device (from /var/log/apt/history.log)
@@ -23,9 +23,11 @@ PKGS_DEV="build-essential pkg-config git vim curl wget htop tmux tree jq rsync u
           mesa-utils glmark2 libegl1 libgles2 libgbm1 \
           libgbm-dev libegl-dev libgles-dev libdrm-dev"
 
-echo "=== 1. staged kernel + dtb (GPU opp table must be in the copy we pack) ==="
-cp -f "$RDIR/rk3326-xifan-r36max2.dtb" "$OUT/boot/"
-cp -f "$RDIR/rk3326-xifan-r36max2-usbhost.dtb" "$OUT/boot/"
+echo "=== 1. staged dtb (GPU opp table must be in the copy we pack) ==="
+# v20-stage72.sh stages the dtb from the kernel this image ships.  Re-copying it here
+# out of a kernel tree would be a second way to put the wrong board dtb on a card.
+[ -f "$OUT/boot/rk3326-xifan-r36max2.dtb" ] || { echo "!! no staged dtb in $OUT/boot - run scripts/v20-stage72.sh first"; exit 1; }
+echo "  staged dtb: $(sha256sum "$OUT/boot/rk3326-xifan-r36max2.dtb" | cut -c1-16)"
 echo "  200MHz opp voltage in the staged dtb: $(dtc -I dtb -O dts "$OUT/boot/rk3326-xifan-r36max2.dtb" 2>/dev/null | awk '/opp-table-gpu \{/{f=1} f&&/opp-microvolt/{print $3; exit}')"
 
 echo "=== 2. packages ==="
@@ -79,23 +81,23 @@ EGC
 chmod 755 "$R/usr/local/bin/r36-glcheck"
 
 echo "=== 4. scripts and units (the Windows-side copies are the source of truth) ==="
-cp -f "$SRC/r36-status-screen" "$R/usr/local/sbin/r36-status-screen"
-cp -f "$SRC/r36-bootlog"       "$R/usr/local/sbin/r36-bootlog"
-cp -f "$SRC/r36-fbshot.py"     "$R/usr/local/bin/r36-fbshot" 2>/dev/null || true
+cp -f "$PKG/r36-status-screen/r36-status-screen" "$R/usr/local/sbin/r36-status-screen"
+cp -f "$PKG/r36-bootlog/r36-bootlog"       "$R/usr/local/sbin/r36-bootlog"
+cp -f "/dev/null" /* r36-fbshot.py: dropped with the trim; restore from git if wanted */     "$R/usr/local/bin/r36-fbshot" 2>/dev/null || true
 chmod 755 "$R/usr/local/sbin/r36-status-screen" "$R/usr/local/sbin/r36-bootlog"
-cp -f "$SRC/r36-wpa@.service"  "$R/etc/systemd/system/"
+cp -f "$PKG/r36-wifi-setup/r36-wpa@.service"  "$R/etc/systemd/system/"
 # WiFi from the BOOT partition: this board has no keyboard and no UART, so a
 # text file on the FAT partition is the only way somebody else can tell the
 # image which network to join.  Runs at boot and every 60 s afterwards.
-cp -f "$SRC/r36-wifi-setup" "$R/usr/local/sbin/r36-wifi-setup"
+cp -f "$PKG/r36-wifi-setup/r36-wifi-setup" "$R/usr/local/sbin/r36-wifi-setup"
 chmod 755 "$R/usr/local/sbin/r36-wifi-setup"
-cp -f "$SRC/r36-wifi-setup.service" "$SRC/r36-wifi-setup.timer" "$R/etc/systemd/system/"
+cp -f "$PKG/r36-wifi-setup/r36-wifi-setup.service" "$PKG/r36-wifi-setup/r36-wifi-setup.timer" "$R/etc/systemd/system/"
 for t in wpa_passphrase findfs blkid iw md5sum mountpoint; do
   chroot "$R" /bin/sh -c "command -v $t >/dev/null 2>&1" \
     || echo "  !! r36-wifi-setup needs $t, not found in the rootfs"
 done
 mkdir -p "$R/etc/systemd/logind.conf.d"
-cp -f "$SRC/99-r36-power.conf" "$R/etc/systemd/logind.conf.d/99-r36-power.conf"
+cp -f "$CFG/99-r36-power.conf" "$R/etc/systemd/logind.conf.d/99-r36-power.conf"
 grep -q '^HandlePowerKey=ignore' "$R/etc/systemd/logind.conf.d/99-r36-power.conf" \
   || { echo "!! HandlePowerKey is not ignore - the power key would shut down"; exit 1; }
 
@@ -199,4 +201,4 @@ rm -f "$R/var/lib/dbus/machine-id"
 printf '# static resolver: public first (works on any network), router second (LAN names)\nnameserver 223.5.5.5\nnameserver 192.168.31.1\n' > "$R/etc/resolv.conf"
 echo "  resolv.conf nameservers: $(grep -c '^nameserver' "$R/etc/resolv.conf")"
 du -sh "$R" | sed 's/^/  staging rootfs: /'
-echo "=== apply-v19 done; next: V=v20 bash $REPO/scripts/pack-v20.sh ==="
+echo "=== apply-v19 done; next: bash scripts/apply-es.sh, then V=v21 bash $REPO/scripts/pack-v20.sh ==="

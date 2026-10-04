@@ -12,7 +12,8 @@
 set -euo pipefail
 REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 R=${R:-/root/r36/rootfs}
-SRC=$REPO/build
+PKG=$REPO/packages
+TOOLSD=$REPO/tools/capture
 WSLNS=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf)
 
 echo "=== rootfs: $R ($(du -sh "$R" 2>/dev/null | cut -f1)) ==="
@@ -36,16 +37,16 @@ echo "  installed: $HAVE"
 
 echo "=== [2] files ==="
 mkdir -p "$R/etc/xdg/weston" "$R/usr/local/bin"
-cp -f "$SRC/weston.ini"            "$R/etc/xdg/weston/weston.ini"
-cp -f "$SRC/weston.service"        "$R/etc/systemd/system/weston.service"
-cp -f "$SRC/r36-keymapper.service" "$R/etc/systemd/system/r36-keymapper.service"
-cp -f "$SRC/r36-keymapper.py"      "$R/usr/local/bin/r36-keymapper.py"
-cp -f "$SRC/r36-wayland"           "$R/usr/local/bin/r36-wayland"
-cp -f "$SRC/r36-shot.py"           "$R/usr/local/bin/r36-shot.py"
-cp -f "$SRC/r36-shot2.py"          "$R/usr/local/bin/r36-shot2.py"
-cp -f "$SRC/r36-osk.py"            "$R/usr/local/bin/r36-osk"
-cp -f "$SRC/r36-evsnap.py"         "$R/usr/local/bin/r36-evsnap"
-cp -f "$SRC/zz-r36-wayland.sh"     "$R/etc/profile.d/zz-r36-wayland.sh"
+cp -f "$PKG/r36-wayland/weston.ini"            "$R/etc/xdg/weston/weston.ini"
+cp -f "$PKG/r36-wayland/weston.service"        "$R/etc/systemd/system/weston.service"
+cp -f "$PKG/r36-keymapper/r36-keymapper.service" "$R/etc/systemd/system/r36-keymapper.service"
+cp -f "$PKG/r36-keymapper/r36-keymapper.py"      "$R/usr/local/bin/r36-keymapper.py"
+cp -f "$PKG/r36-wayland/r36-wayland"           "$R/usr/local/bin/r36-wayland"
+cp -f "$TOOLSD/r36-shot.py"           "$R/usr/local/bin/r36-shot.py"
+cp -f "$TOOLSD/r36-shot2.py"          "$R/usr/local/bin/r36-shot2.py"
+cp -f "$PKG/r36-osk/r36-osk.py"            "$R/usr/local/bin/r36-osk"
+cp -f "$TOOLSD/r36-evsnap.py"         "$R/usr/local/bin/r36-evsnap"
+cp -f "$PKG/r36-wayland/zz-r36-wayland.sh"     "$R/etc/profile.d/zz-r36-wayland.sh"
 chmod 644 "$R/etc/xdg/weston/weston.ini" "$R/etc/systemd/system/weston.service" \
           "$R/etc/systemd/system/r36-keymapper.service" "$R/etc/profile.d/zz-r36-wayland.sh"
 chmod 755 "$R/usr/local/bin/r36-keymapper.py" "$R/usr/local/bin/r36-wayland" \

@@ -4,8 +4,8 @@ set -u
 REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 ROOT=/root/r36/rootfs
 OUT=/root/r36/out
-KDIR=/root/r36/linux-6.12.79
-KVER=$(cat /root/r36/kversion 2>/dev/null || echo 6.12.79)
+# one kernel in this image; the module tree itself is staged by scripts/v20-rootfs.sh
+KVER=7.2.8
 TARBALL=$REPO/downloads/ubuntu-base-26.04.1-base-arm64.tar.gz
 CRED=$REPO/build/wifi-cred.txt
 # R36_BAKE_WIFI=0 builds an image with NO credentials in it - that is the mode
@@ -68,54 +68,15 @@ for b in sshd wpa_supplicant ip apt-get depmod; do
   printf "%-16s " "$b"; chroot "$ROOT" /bin/sh -c "command -v $b || ls /usr/sbin/$b 2>/dev/null" || echo MISSING
 done
 
-echo "=== kernel modules ==="
-# Which .ko belongs to which kernel cannot be answered by a filename or an mtime:
-# the joypad source tree and the AIC tree have each been built against both 6.12
-# and 7.2 in this project, and a module built for the wrong kernel boots into
-# "no WiFi / no buttons" with nothing but one line in dmesg.  So: pick the source
-# by kernel, then assert vermagic before it is allowed into the image.
-#   6.12.79 -> legacy integer-GPIO joypad driver (hardware-verified since v11)
-#   7.2.8   -> the gpiod conversion in artifacts/joypad (needs the polarity flags
-#              in projects/r36max2/dt/rk3326-xifan-r36max2.dts; see projects/r36max2/patches/joypad-gpiod.patch)
-mkdir -p "$ROOT/lib/modules"
-rm -rf "$ROOT/lib/modules/$KVER"
-cp -a "$OUT/lib/modules/$KVER" "$ROOT/lib/modules/"
-# modules_install leaves build/source symlinks into the multi-GB kernel tree;
-# shipping them means a dangling symlink on every card (and anything copying with
-# -r follows them and dumps the source tree into the image)
-rm -f "$ROOT/lib/modules/$KVER/build" "$ROOT/lib/modules/$KVER/source"
-mkdir -p "$ROOT/lib/modules/$KVER/extra"
-cp -v "$KDIR/modules.order" "$KDIR/modules.builtin" "$KDIR/modules.builtin.modinfo" "$ROOT/lib/modules/$KVER/" 2>/dev/null
-
-case "$KVER" in
-  6.12.79) JPDIR=/root/r36/joypad/src;              JPSFX="" ;;
-  *)       JPDIR=$REPO/artifacts/joypad;    JPSFX="-$KVER" ;;
-esac
-for m in rocknix-singleadc-joypad rocknix-joypad; do
-  src="$JPDIR/$m$JPSFX.ko"
-  [ -e "$src" ] || { echo "!! missing $src"; exit 1; }
-  v=$(modinfo -F vermagic "$src" | awk '{print $1}')
-  [ "$v" = "$KVER" ] || { echo "!! $src is vermagic $v, not $KVER"; exit 1; }
-  cp -v "$src" "$ROOT/lib/modules/$KVER/extra/$m.ko"
-done
-cp -v "$KDIR/net/wireless/cfg80211.ko" "$ROOT/lib/modules/$KVER/kernel/net/wireless/" 2>/dev/null
-# the radxa-pkg AIC tree, rebuilt for THIS kernel (7.2 needs
-# projects/r36max2/patches/aic8800-7.2.8-compat.patch applied with: patch -p1 -d drivers -i ...)
-AICDIR=${AIC_STAGED:-$REPO/artifacts/aic72}
-for m in aic8800_fdrv aic_load_fw; do
-  src=""
-  for cand in "$AICDIR/$m-$KVER.ko" "$KDIR/../$m.ko"; do
-    [ -e "$cand" ] && src="$cand" && break
-  done
-  [ -n "$src" ] || { echo "!! no $m.ko staged for $KVER (build it first: v20-aic72b.sh)"; exit 1; }
-  v=$(modinfo -F vermagic "$src" | awk '{print $1}')
-  [ "$v" = "$KVER" ] || { echo "!! $src is vermagic $v, not $KVER"; exit 1; }
-  cp -v "$src" "$ROOT/lib/modules/$KVER/extra/$m.ko"
-done
-chroot "$ROOT" /usr/bin/env depmod -a "$KVER" && echo "depmod ok"
-for m in rocknix_singleadc_joypad aic8800_fdrv; do
-  echo "  modprobe -n $m: $(chroot "$ROOT" /usr/bin/env modprobe -n -S "$KVER" "$m" 2>&1 || echo OK)"
-done
+echo "=== kernel modules: not this script's job ==="
+# Which .ko belongs to which kernel cannot be answered by a filename or an mtime, so
+# the module tree and the four out-of-tree drivers are installed in exactly one place:
+# scripts/v20-rootfs.sh, which copies out72's 7.2.8 tree and then stages the .ko from
+# artifacts/prebuilt only after checking sha256 against its MANIFEST and vermagic
+# against 7.2.8.  This script used to copy a tree from $OUT/lib/modules as well; the
+# two sources left whichever one ran last in charge, which is not a correctness signal.
+# A module built for the wrong kernel loads as "no WiFi / no buttons" with one line in
+# dmesg and nothing else to look at - this board has no serial console.
 
 echo "=== firmware ==="
 mkdir -p "$ROOT/lib/firmware"
@@ -128,6 +89,20 @@ mkdir -p "$ROOT/etc/modules-load.d"
 echo "=== network config ==="
 mkdir -p "$ROOT/etc/wpa_supplicant" "$ROOT/etc/systemd/network"
 if [ -n "$SSID" ]; then
+# Store the PBKDF2-HMAC-SHA1(4096) pre-key, never the passphrase: this file lands in
+# the image, the image gets handed around, and wpa_supplicant accepts the 64-hex form
+# directly.  r36-wifi-setup on the card already hashes this way; the builder was the
+# one place still writing it plaintext.
+if command -v wpa_passphrase >/dev/null 2>&1; then
+  PSK_HEX=$(wpa_passphrase "$SSID" "$PSK" | sed -n 's/^[[:space:]]*psk=\([0-9a-f]\{64\}\)$/\1/p')
+else
+  PSK_HEX=$(python3 -c 'import hashlib,sys; print(hashlib.pbkdf2_hmac("sha1",sys.argv[1].encode(),sys.argv[2].encode(),4096,32).hex())' "$PSK" "$SSID")
+fi
+case "$PSK_HEX" in
+  ''|*[!0-9a-f]*) echo "!! PSK hash is not hex: '$PSK_HEX'"; exit 1 ;;
+esac
+[ "${#PSK_HEX}" = 64 ] || { echo "!! PSK hash is ${#PSK_HEX} chars, want 64"; exit 1; }
+echo "  baking ssid=\"$SSID\" as a PBKDF2 hash (${PSK_HEX:0:8}...), not the passphrase"
 cat > "$ROOT/etc/wpa_supplicant/wpa_supplicant-wlan0.conf" <<WPAS
 ctrl_interface=DIR=/run/wpa_supplicant GROUP=netdev
 update_config=1
@@ -135,7 +110,7 @@ country=CN
 
 network={
     ssid="$SSID"
-    psk="$PSK"
+    psk=$PSK_HEX
     priority=1
 }
 WPAS
@@ -200,7 +175,11 @@ chroot "$ROOT" /bin/sh -c '
 chroot "$ROOT" /bin/sh -c 'apt-get clean'
 
 echo "=== runtime resolv.conf (device-side DNS, not WSL's) ==="
-printf 'nameserver 192.168.31.1\nnameserver 223.5.5.5\n' > "$ROOT/etc/resolv.conf"
+echo "=== runtime resolv.conf (device-side DNS, not WSL's) ==="
+# 不烧死某台路由器：设备侧走 systemd-networkd 从 DHCP 拿到的 DNS，这里只留公共
+# 解析器作离线兜底。旧版本把 192.168.31.1 写死，换网络后解析全废（ES 的
+# HttpReq 报错就是这么来的）。
+printf 'nameserver 223.5.5.5\nnameserver 119.29.29.29\n' > "$ROOT/etc/resolv.conf"
 
 echo "=== unmount ==="
 umount -R "$ROOT/dev" 2>/dev/null
@@ -209,5 +188,5 @@ umount "$ROOT/sys" 2>/dev/null
 
 echo "=== result ==="
 du -sh "$ROOT"
-ls "$ROOT/lib/modules/$KVER/extra/"
+echo "modules now: $(ls "$ROOT/lib/modules" 2>/dev/null | tr '\n' ' ')(filled in by scripts/v20-rootfs.sh)"
 echo "=== ROOTFS BUILD DONE ==="

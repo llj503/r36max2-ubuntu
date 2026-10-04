@@ -21,7 +21,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 | 项目 | 状态 | 证据 / 详见 |
 | --- | --- | --- |
 | 引导（TF 卡双启动，eMMC 原样保留） | ✅ | u-boot 2017.09 → `boot.ini` → `booti` |
-| 主线内核 6.12.79 + 板级 dtb | ✅ | [`projects/r36max2/dt/`](projects/r36max2/dt/)，另见 [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
+| 主线内核 7.2.8 + 板级 dtb（v21 起镜像里只有它） | ✅ | [`projects/r36max2/dt/`](projects/r36max2/dt/)，6.12.79 那条线见 [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
 | 屏 / 背光 / 控制台 | ✅ | DSI 1024x768@60，fbcon 正常 |
 | systemd + 网络 + SSH | ✅ | 40 秒内拿到 DHCP 地址 |
 | WiFi（AIC8800DC，USB，chip_sub_id=2） | ✅ | 关联 -47 dBm，rx65/tx78 MBit/s |
@@ -55,7 +55,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 | weston 会话、截图为什么拿不到、vblank 卡死 | [WAYLAND.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md) |
 | 摇杆当键鼠、屏上键盘 | [JOYPAD-BRIDGE.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/JOYPAD-BRIDGE.md)、[OSK.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/OSK.md) |
 | 1 GB 内存上编出并跑起 EmulationStation | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
-| 6.12.79 与 7.2.8 双内核怎么共存、切换、打哪些补丁 | [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
+| 7.2.8 怎么打上 ROCKNIX 的补丁层、6.12.79 那条线去哪了 | [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
 | 换网络 / 交给别人用（不带凭据的镜像） | [WIFI-AND-SHARING.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md) |
 | 还没解决的问题 | [KNOWN-ISSUES.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KNOWN-ISSUES.md) |
 | 许可、第三方来源、默认口令风险 | [LICENSING.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/LICENSING.md)、[SECURITY.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/SECURITY.md) |

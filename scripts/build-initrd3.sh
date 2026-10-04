@@ -62,8 +62,12 @@ EOF
 chmod +x "$IR/init"
 
 mkdir -p "$OUT"
-cp -f /root/r36/linux-6.12.79/arch/arm64/boot/Image "$OUT/Image"
-cp -f /root/r36/linux-6.12.79/arch/arm64/boot/dts/rockchip/rk3326-xifan-r36max2.dtb "$OUT/"
+# not needed by the initrd itself (busybox is kernel-agnostic); staged here so the
+# packer's inputs are all in one directory.  Must be the kernel this image boots -
+# an older 6.12 copy left in out/boot is how a stale Image ends up on a FAT partition.
+K=${K:-/root/r36/linux-7.2.8}
+cp -f "$K/arch/arm64/boot/Image" "$OUT/Image"
+cp -f "$K/arch/arm64/boot/dts/rockchip/rk3326-xifan-r36max2.dtb" "$OUT/"
 cd "$IR"
 find . | cpio -o -H newc --quiet 2>/dev/null | gzip -9 > /tmp/initrd.cpio.gz
 mkimage -A arm64 -O linux -T ramdisk -C gzip -n "uInitrd-r36max2" -d /tmp/initrd.cpio.gz "$OUT/uInitrd" >/dev/null
