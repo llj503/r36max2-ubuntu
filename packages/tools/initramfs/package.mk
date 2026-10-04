@@ -77,6 +77,14 @@ exec sh
 EOF
   chmod 755 ${IR}/init
 
+  # The archive built below is gzip, so the kernel has to be able to decompress gzip.
+  # The inherited rocknix template enables RD_LZO only, and the first v21 card booted to
+  # "compression method gzip not configured / Initramfs unpacking failed" and then
+  # reset in a loop - with the panel already up, so that message was the whole boot.
+  local KCONF="${BUILD}/build/linux-$(get_pkg_version linux)/.config"
+  grep -qx 'CONFIG_RD_GZIP=y' "${KCONF}" 2>/dev/null ||
+    die "initramfs: kernel has no gzip decompressor (${KCONF}) - the board cannot unpack this initrd"
+
   # deterministic archive: sorted entries, mtimes clamped to SOURCE_DATE_EPOCH
   mkdir -p ${INSTALL}/.image
   ( cd ${IR} && find . | LC_ALL=C sort | \
