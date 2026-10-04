@@ -31,9 +31,9 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 | 声音（rk817 codec + 外接功放） | ✅ | 耳机与喇叭都实测有声 |
 | GPU（panfrost + Mesa + GBM + EGL） | ✅ | `Mali-G31 MC1 (Panfrost)`，GLES 3.1，见下文 |
 | Wayland 图形会话（weston 14） | ⚠️ 起得来、能合成；VOP 会丢 vblank —— 有时永久卡死（只能重启），有时只是间歇 WARN 而画面仍可操作 | `r36-wayland start`，见下文 |
-| 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对；但**跑 ES 时要停桥**（抢设备） | `build/r36-keymapper.py`，见下文 |
+| 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对；但**跑 ES 时要停桥**（抢设备） | `packages/r36-keymapper/r36-keymapper.py`，见下文 |
 | 虚拟键盘（`r36-osk`：uinput + wofi 网格） | ✅ 按键流已无人值守逐事件验证；点击那一步要屏幕能用 | `r36-osk`，见下文 |
-| EmulationStation（batocera 分支，桌面 GL） | ✅ 编出 117 MB 二进制，weston 里起窗口、列表、**启动回路实测跑通**（art-book 主题上屏、按键导航正常）；摇杆导航待眼睛确认 | `build/k72-es-resume.sh` + `/usr/local/bin/r36-es`，见下文 |
+| EmulationStation（batocera 分支，桌面 GL） | ✅ 编出 117 MB 二进制，weston 里起窗口、列表、**启动回路实测跑通**（art-book 主题上屏、按键导航正常）；摇杆导航待眼睛确认 | `tools/emulationstation/runtime/k72-es-resume.sh` + `/usr/local/bin/r36-es`，见下文 |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
@@ -54,19 +54,38 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核�
 
 ## 目录结构
 
+顶层按 ROCKNIX/distribution 的角色划分来组织（`projects` 描述板子、`packages` 是装进
+系统的东西、`scripts` 是构建流水线、`tools` 是调试仪器、`distributions` 是发布记录）：
+
 ```
-board/            板级设备树（rk3326-xifan-r36max2.dts + usbhost/gadget 变体 + DRAM timing）
-build/            全部构建与调试脚本（*.sh）、rootfs 里的脚本与 systemd 单元
-  r36-bootlog*    开机状态报告 → BOOT:\r36-boot.txt
-  r36-status-screen*  tty1 上的状态页（IP / 信号 / 失败单元 / 电量）
-  r36-wpa@.service    不依赖 udev device 单元的 wpa_supplicant 模板
-  r36-expand-root     在线扩根分区（只挪最后一个分区的结束扇区）
-  99-r36-power.conf   logind 电源键策略
-  r36-gles2-demo.c    无窗 GLES2/GBM demo（扫出 + 像素回读 + 测速）
-  egl-probe.c         枚举 EGL config 并逐个试 window surface
-  raw2png.py shot.sh  不拍照片就能看屏幕
-out/              产物镜像与说明（*.img.xz 不入库）
+projects/r36max2/     这块板子的定义
+  dt/                   板级设备树（rk3326-xifan-r36max2.dts + usbhost/gadget 变体 + DRAM timing）
+  patches/              打到内核/驱动上的补丁（joypad 四件套、AIC8800 7.2.8 兼容）
+packages/             装进 rootfs、跑在板子上的东西
+  r36-bootlog/          开机状态报告 → BOOT:\r36-boot.txt
+  r36-status-screen/    tty1 上的状态页（IP / 信号 / 失败单元 / 电量）
+  r36-wifi-setup/       无键盘配网 + r36-wpa@.service（不依赖 udev device 单元的模板）
+  r36-keymapper/        摇杆→鼠标/键盘 uinput 桥
+  r36-osk/              虚拟键盘
+  r36-wayland/          weston 会话（weston.ini / weston.service / 启动脚本）
+  r36-emulationstation/ ES 启动器与输入映射表
+  r36-expand-root/      在线扩根分区（只挪最后一个分区的结束扇区）
+  r36-fwswap/ r36-usb-gadget/   WiFi 固件切换、USB gadget 调试通道
+  gpu-demos/            r36-gles2-demo.c / r36-glprobe.c / egl-probe.c 等 panfrost 验证程序
+scripts/              宿主机上的流水线：下载内核、打补丁、编译、装 rootfs、打包镜像（98 个）
+tools/<子系统>/        调试仪器，按 subsystem 分：input gpu display wifi audio wayland
+                        emulationstation image system host power theme capture + misc
+                        每个子系统再分 diagnostics（只读）/ runtime（改变板子状态）/ verify（判定）
+config/rootfs/        直接落进 rootfs 的配置（logind 电源键策略 99-r36-power.conf）
+distributions/        每一版镜像的 sha256 与发布记录（*.img.xz 本体不入库）
+documentation/        移植方案、刷写与首启、上传步骤，以及验收用的 images/
+archive/              被取代的历史版本，只作记录用，不在当前流水线上（见 archive/README.md）
+build/                本机 scratch，不入库：第三方源码、CMake 中间产物、wifi-cred.txt
 ```
+
+脚本里的绝对路径仍写作 `/mnt/e/ubuntu/...`（原作者的 WSL 构建机盘符），换机器时把
+`/mnt/e/ubuntu` 换成你的仓库路径即可；`tools/` 与 `archive/` 里的一次性脚本没有逐一改写
+它们写死的输出目录。
 
 ## 从零构建
 
@@ -78,18 +97,18 @@ out/              产物镜像与说明（*.img.xz 不入库）
 sudo mkdir -p /root/r36 && cd /root/r36
 # 1) 内核：linux-6.12.79 + Rocknix 的三层补丁（mainline → devices/RK3326 → 6.12-LTS）
 tar xf linux-6.12.79.tar.xz
-cp board/rk3326-xifan-r36max2*.dts* linux-6.12.79/arch/arm64/boot/dts/rockchip/
+cp projects/r36max2/dt/rk3326-xifan-r36max2*.dts* linux-6.12.79/arch/arm64/boot/dts/rockchip/
 #    并在该目录 Makefile 的 dtb-$(CONFIG_ARCH_ROCKCHIP) 里加一行
-bash build/apply-mainline.sh
+bash scripts/apply-mainline.sh
 # 2) 内核 + dtbs + modules + 两个外部模块（joypad / aic8800）
-bash build/build-all.sh
+bash scripts/build-all.sh
 # 3) rootfs：ubuntu-base 解包 → apt 装包 → 写配置（WiFi 凭据从 build/wifi-cred.txt 读，别提交）
-bash build/build-rootfs.sh
-bash build/apply-v19.sh          # 把真机上验证过的改动回写进 rootfs
+bash scripts/build-rootfs.sh
+bash scripts/apply-v19.sh          # 把真机上验证过的改动回写进 rootfs
 # 4) busybox initramfs（按 marker 文件找根分区）
-bash build/build-initrd3.sh
+bash scripts/build-initrd3.sh
 # 5) 打包：MBR + idbloader/uboot/trust blob + FAT(BOOT) + ext4(2 GiB) → .img.xz
-V=v19 bash build/pack-v10.sh
+V=v19 bash scripts/pack-v10.sh
 ```
 
 `pack-v10.sh` 需要三个厂商 blob（`idbloader.img` / `uboot.img` / `trust.img`），
@@ -99,18 +118,18 @@ V=v19 bash build/pack-v10.sh
 ### 出 v20（双内核 + Wayland + 摇杆键鼠桥）的实际顺序
 
 v20 不是"再跑一遍老脚本"，它把 7.2.8、gpiod 摇杆、WiFi 兼容补丁和图形栈一起收进来，
-所以顺序和检查点都记在 `build/v20-*.sh` 里，按编号执行：
+所以顺序和检查点都记在 `scripts/v20-*.sh` 里，按编号执行：
 
 ```bash
-bash build/v20-stage72.sh      # 7.2.8 的 Image / 三份 dtb 落到 out/boot，核对 dtb 里的 gpio 极性标志
-bash build/v20-aic72b.sh       # 干净的 AIC 源码副本 + 7.2.8 兼容补丁 -> 对 7.2.8 重编 -> 与卡上正在用的 .ko 比 sha
-bash build/v20-rootfs.sh       # 两个内核的模块树进 rootfs，逐个 modinfo 断言 vermagic，chroot 里 depmod + modprobe -n
-bash build/apply-v19.sh        # 把真机验证过的改动回写（幂等，可重复跑）
-bash build/v20-clean-wpa.sh    # 删掉被 mask 单元的残留 wants 软链（masked+enabled 会在开机报错）
-python3 build/v20-hostkeys.py  # 扫凭据 + 把镜像里的 SSH 主机密钥换成首次开机现生成
-bash build/apply-wayland.sh    # weston/foot/wofi/grim/wf-recorder/kbd + weston.ini/service + 键鼠桥（不 enable）
-bash build/v20-tidy.sh         # apt cache / lists / 大日志清掉，量一下要塞进 2 GiB 分区的内容
-V=v20 bash build/pack-v20.sh   # 打包，并在压缩前自检（见下）
+bash scripts/v20-stage72.sh      # 7.2.8 的 Image / 三份 dtb 落到 out/boot，核对 dtb 里的 gpio 极性标志
+bash scripts/v20-aic72b.sh       # 干净的 AIC 源码副本 + 7.2.8 兼容补丁 -> 对 7.2.8 重编 -> 与卡上正在用的 .ko 比 sha
+bash scripts/v20-rootfs.sh       # 两个内核的模块树进 rootfs，逐个 modinfo 断言 vermagic，chroot 里 depmod + modprobe -n
+bash scripts/apply-v19.sh        # 把真机验证过的改动回写（幂等，可重复跑）
+bash scripts/v20-clean-wpa.sh    # 删掉被 mask 单元的残留 wants 软链（masked+enabled 会在开机报错）
+python3 scripts/v20-hostkeys.py  # 扫凭据 + 把镜像里的 SSH 主机密钥换成首次开机现生成
+bash scripts/apply-wayland.sh    # weston/foot/wofi/grim/wf-recorder/kbd + weston.ini/service + 键鼠桥（不 enable）
+bash scripts/v20-tidy.sh         # apt cache / lists / 大日志清掉，量一下要塞进 2 GiB 分区的内容
+V=v20 bash scripts/pack-v20.sh   # 打包，并在压缩前自检（见下）
 ```
 
 `pack-v20.sh` 的自检不是装饰：它挂载镜像后逐项核对**两个内核各自的 .ko 数量、
@@ -128,7 +147,7 @@ wpa 凭据文件、`build`/`source` 软链接已删除；任何一项不过就**
 
 ```bash
 # 只刷 64 GB 那张卡；插回电脑后先确认设备号，别写错盘
-xzcat out/r36max2-ubuntu-v20.img.xz | sudo dd of=/dev/sdX bs=8M status=progress oflag=sync
+xzcat distributions/r36max2-ubuntu-v20.img.xz | sudo dd of=/dev/sdX bs=8M status=progress oflag=sync
 ```
 
 开机约 40 秒后 tty1 会出现状态页（IP、信号、失败单元、电量）。想关掉就在 BOOT 分区建空文件
@@ -158,7 +177,7 @@ xzcat out/r36max2-ubuntu-v20.img.xz | sudo dd of=/dev/sdX bs=8M status=progress 
 
 ## GPU 上层验证（panfrost + Mesa + GBM + EGL）
 
-`build/r36-gles2-demo.c` 直接拿 DRM master、modeset DSI 连接器、建 GBM surface、
+`packages/gpu-demos/r36-gles2-demo.c` 直接拿 DRM master、modeset DSI 连接器、建 GBM surface、
 跑动画着色器并扫出，同时用 `glReadPixels` 把结果读回来做数值证明。实测：
 
 | 场景 | 结果 |
@@ -205,7 +224,7 @@ r36-glcheck probe    # 枚举 EGL config 并逐个试 window surface
 内核侧还有一个坑：panfrost `probe failed -22`。真因是一句
 `vdd_logic: Restricting voltage, 975000-950000uV` —— 主线 `rk3326.dtsi` 的 GPU OPP 最低档要
 950 mV，而 `vdd_logic` 已被别的消费者顶在 975 mV，regulator 核心遇到 min>max 直接 EINVAL，
-死在 `panfrost_devfreq_init`。修法就是板级 dts 自带一张 OPP 表（见 `board/rk3326-xifan-r36max2.dts`
+死在 `panfrost_devfreq_init`。修法就是板级 dts 自带一张 OPP 表（见 `projects/r36max2/dt/rk3326-xifan-r36max2.dts`
 里的 `r36_gpu_opp`）。顺带：DTC 1.7.2 不接受在所有 `/ { }` 之外写带标签的裸节点。
 
 ## Wayland（weston）：让屏幕显示图形界面
@@ -219,14 +238,14 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   cmake pkg-config`。Ubuntu **没有 `weston-examples`** 这个包，示例客户端
   （`weston-simple-egl`、`weston-flower`、`weston-screenshooter`）都在 `weston` 包里；
   而 apt 只要遇到一个不存在的包名就**整条命令什么都不装**（`E: Unable to locate package`
-  后面紧跟着一句看起来像成功的 `apt exit=0`），所以 `build/k72-wayland-install.sh`
+  后面紧跟着一句看起来像成功的 `apt exit=0`），所以 `scripts/k72-wayland-install.sh`
   先用 `apt-cache policy` 过滤再安装。
 - 落地的文件（都在仓库里，装完设备与将来出镜像用同一批）：
-  `build/weston.ini` → `/etc/xdg/weston/weston.ini`；
-  `build/weston.service` → systemd 单元，**默认 disabled**，因为合成器一拿 DRM master
+  `packages/r36-wayland/weston.ini` → `/etc/xdg/weston/weston.ini`；
+  `packages/r36-wayland/weston.service` → systemd 单元，**默认 disabled**，因为合成器一拿 DRM master
   就会把 tty1 的状态页顶掉；
-  `build/r36-wayland` → `/usr/local/bin/r36-wayland`（`start|stop|status|run <app>|egl|
-  term|smoke [秒]|shot|apps|env`）；`build/zz-r36-wayland.sh` → `/etc/profile.d/`，只在
+  `packages/r36-wayland/r36-wayland` → `/usr/local/bin/r36-wayland`（`start|stop|status|run <app>|egl|
+  term|smoke [秒]|shot|apps|env`）；`packages/r36-wayland/zz-r36-wayland.sh` → `/etc/profile.d/`，只在
   socket 存在时导出 `XDG_RUNTIME_DIR=/run/wayland WAYLAND_DISPLAY=wayland-0`。
 - 用法：`r36-wayland start` → `r36-wayland run foot`（或 `r36-wayland smoke 30` 摆两个
   GL 客户端）。从 SSH 起的程序直接显示在屏幕上，这就是这台没键盘的机器的日常姿势。
@@ -239,7 +258,7 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
      `Output capture error: unauthorized`，`grim`/`wf-recorder` 需要
      `wlr-screencopy-unstable-v1`（weston 不实现）。libweston 里
      `weston_compositor_add_screenshot_authority` 只把捕获权交给"由用户按键触发的那次请求"，
-     ini 没有开关；`build/r36-shot.py`、`build/r36-shot2.py` 试过直接请求、先挂请求再注入
+     ini 没有开关；`tools/capture/r36-shot.py`、`tools/capture/r36-shot2.py` 试过直接请求、先挂请求再注入
      6 种组合键、全盘找新文件，都没能拿到 PNG。**所以图形验收目前仍然靠眼睛/拍照。**
   3. **意外收获：`/dev/uinput` 虚拟键盘这条路是通的**（uinput 内核内建，不需要模块）。
      `r36-shot.py` 造出键盘后 weston 立刻记录
@@ -256,8 +275,8 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   之后 `rockchip-drm: vblank wait timed out on crtc 0` / `flip_done timed out` /
   `[CRTC:39:crtc-0] commit wait timed out` 每 10–40 秒循环，面板冻在最后一帧（看起来是"白屏带四角暗块"）。
   **停 weston、`chvt 1`、写 `fb0/blank=0` 都救不回来**，vsync 中断已经不再来了。
-  **加上 `[core] pageflip-timeout=500` 后的复测**（`build/k72-flip-churn.sh`：8 轮 × 12 秒、每轮把
-  EGL 客户端 SIGKILL 掉复现"拆面"；`build/k72-flip-soak.sh`：12 分钟、每分钟起停一次客户端）：
+  **加上 `[core] pageflip-timeout=500` 后的复测**（`scripts/k72-flip-churn.sh`：8 轮 × 12 秒、每轮把
+  EGL 客户端 SIGKILL 掉复现"拆面"；`tools/host/verify/k72-flip-soak.sh`：12 分钟、每分钟起停一次客户端）：
   内核四个 flip/vblank 计数**全程 0 增量**，weston 一直活着，stop 之后控制台自动回来。为了不让
   "客户端根本没挂上"冒充成功，脚本先用 weston 的累计 CPU 时间证明真在合成——空闲 15 秒 ΔCPU=0 秒，
   带 `weston-simple-egl` 15 秒 ΔCPU=2 秒，浸泡期间每分钟稳定 +2.5~3 秒。
@@ -266,7 +285,7 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   pending flip, but as we are shutting down we can't wait to destroy it when the flip completes`），
   所以"23 分钟"可能只是延迟，真正弄丢 vsync 中断的是那次中途硬杀。
 - **但"中途硬杀"这条已被证伪，同时"只有重启能救"被证实**（2026-10-03 下午第二次发作）：
-  专门造的三个复现工具（`build/k72-killmidflip.sh` 在 flip 飞行途中 SIGKILL、`k72-sigtermflip.sh` 换
+  专门造的三个复现工具（`scripts/k72-killmidflip.sh` 在 flip 飞行途中 SIGKILL、`k72-sigtermflip.sh` 换
   SIGTERM、`r36-fatalabort-device.sh` 让客户端自己 abort）全部**没能**弄丢 vsync；而第二次卡死发生在
   `pageflip-timeout=500` **已经生效**、屏幕**完全静止**（foot + 一个没人点的 wofi 网格，没有任何客户端
   起停）约 23 分钟的时候。于是"拆面"和"硬杀"两个触发假设都死了，剩下的嫌疑人只有"跑了多久"和
@@ -276,9 +295,9 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
   在等 vblank**，说明 vsync 已在 VOP/内核层消失，与合成器无关；② 重新 `systemctl start weston` 后，
   weston 每一帧都被拒：`atomic: couldn't commit new state: Device or resource busy` +
   `repaint-flush failed: Device or resource busy`——那条卡死的 commit 还占着 CRTC 状态。
-  **所以 weston 重启不救，只有重启机器能救**（判定脚本：`build/k72-wedge-probe.sh` 停合成器后裸测翻页、
+  **所以 weston 重启不救，只有重启机器能救**（判定脚本：`tools/misc/diagnostics/k72-wedge-probe.sh` 停合成器后裸测翻页、
   `k72-wedge-state.sh` 看是否还有新 stall、`k72-restore-weston.sh` 收尾）。
-  测量工具是 `build/r36-flipprobe.c`（装成 `/usr/local/bin/r36-flipprobe`）：dumb buffer +
+  测量工具是 `packages/gpu-demos/r36-flipprobe.c`（装成 `/usr/local/bin/r36-flipprobe`）：dumb buffer +
   `drmModePageFlip(DRM_MODE_PAGE_FLIP_EVENT)` + poll 计时，健康时 40 次翻页平均 1.7 ms、最大 16.6 ms；
   管线卡死时它自己会**阻塞在内核里不返回**（连 3 秒超时的打印都出不来）——这本身也是个信号。
   两个恢复陷阱：`weston.service` 的 `ExecStopPost=chvt 1` 在装 `kbd` 之前
@@ -291,7 +310,7 @@ GBM/panfrost 起，不需要 X 或别的合成器垫在前面。内存实测：w
 
 ## 摇杆当键鼠用（uinput 桥）
 
-`build/r36-keymapper.py`（纯标准库）读摇杆的 evdev 节点，用 `/dev/uinput` 造一个键盘 +
+`packages/r36-keymapper/r36-keymapper.py`（纯标准库）读摇杆的 evdev 节点，用 `/dev/uinput` 造一个键盘 +
 一个鼠标重新发出去。内核内建 uinput，不需要模块，**也不需要合成器在跑**——验证映射的方法
 就是读那两个新 event 节点，完全不碰 DRM，所以它能安全地单独使用、单独关掉。
 
@@ -328,7 +347,7 @@ Ubuntu 26.04 里**根本没有可用的屏上键盘**：`wvkbd`/`fsvkbd`/`svkbd`
 `onboard`/`matchbox-keyboard` 是 X11 程序而这台机器上没有 Xwayland；更要命的是
 **weston 14 不实现 text-input-v3**（foot 开机就自己说：`text input interface not
 implemented by compositor; IME will be disabled`），所以"输入法风格"的键盘没有对话对象。
-`build/r36-osk.py`（装成 `/usr/local/bin/r36-osk`）改用两个本机已验证的机制拼起来：
+`packages/r36-osk/r36-osk.py`（装成 `/usr/local/bin/r36-osk`）改用两个本机已验证的机制拼起来：
 
 - **`/dev/uinput` 造一个真键盘**：weston/libinput 立刻把它认成
   `r36 on-screen keyboard: device is a keyboard`，发出去的是硬件事件流，
@@ -358,19 +377,19 @@ implemented by compositor; IME will be disabled`），所以"输入法风格"的
   静默消失，测试时看起来像"网格根本没起来"。
 - 启动时会先数内核里的 flip/vblank stall 条数并**大声警告**屏幕可能已经冻住
   （见上一节）——不然就会出现"让人对着一个根本不刷新的屏幕点击"这种事。
-- 不需要屏幕也能验证：`build/k72-osk-headless.sh` 用一个假的 wofi（`/tmp/oskstub/wofi`
-  按脚本吐出按键标签）驱动真 uinput 键盘，再用 `build/r36-evsnap.py`
+- 不需要屏幕也能验证：`tools/capture/k72-osk-headless.sh` 用一个假的 wofi（`/tmp/oskstub/wofi`
+  按脚本吐出按键标签）驱动真 uinput 键盘，再用 `tools/capture/r36-evsnap.py`
   （装成 `/usr/local/bin/r36-evsnap`）从 `/dev/input/eventN` 抓回原始 `EV_KEY` 流逐条比对。
   实测 `h i SHFT a RET #!? @ SPC DEL< X` 产生的按下序列
   `h(35) i(23) SHIFT(42) a(30) ENTER(28) SHIFT(42) 2(3) SPACE(57) BACKSPACE(14)` 与期望**完全一致**，
   没有卡键、SHIFT 两次按下都释放、退出后 uinput 节点自动消失。
   比对时按**键名**取码（`osk.K["2"]`），不要手写数字：`KEY_1=2、KEY_2=3`，
   我正因为硬编码成 2 而误报过一次 FAIL。
-  离线那一层还有 `build/k72-osk-maptest.py`（重复项检查、动作/按键解析、shift 语义、
+  离线那一层还有 `tools/input/verify/k72-osk-maptest.py`（重复项检查、动作/按键解析、shift 语义、
   格子尺寸是否够拇指点）。
 - 还没做完的一步：**真人用摇杆点网格**（要屏幕能用）。落点用
   `foot -- sh -c 'stty -icanon; cat > /tmp/osk-typed.txt'` 抓住，SSH 直接读回，
-  不依赖任何人看屏幕判断（`build/k72-osk-live.sh` + `k72-osk-read.sh`）。
+  不依赖任何人看屏幕判断（`tools/input/diagnostics/k72-osk-live.sh` + `k72-osk-read.sh`）。
 
 ## EmulationStation：在这台 1 GB 的板子上编出来并跑起来了
 
@@ -393,20 +412,20 @@ ROCKNIX 的 `emulationstation-next`（`-DGLES3=1`）也编到 73% 停在 `/root/
   正确做法是把优化级别作为 **make 命令行变量**传进去：
   `cmake --build build --parallel 1 -- "CXX_FLAGS=<flags.make 里的原值> -O1 -g0"`
   —— 命令行赋值优先于 flags.make，GCC 取最后一个 `-O`/`-g`，而 `CXX_DEFINES`/`CXX_INCLUDES`
-  仍由 flags.make 提供，所以不可能悄悄丢宏。真把时间戳弄脏了，`build/k72-esrn-recover.sh` 的
+  仍由 flags.make 提供，所以不可能悄悄丢宏。真把时间戳弄脏了，`tools/emulationstation/diagnostics/k72-esrn-recover.sh` 的
   救法是：先 `diff` 证明 flags.make 内容没变（变了就不敢复用旧对象），再 `touch` 全部 `.o`/`.a`。
 - 产物**不在** `build/es-app/` 下：batocera 的 CMakeLists 把 `CMAKE_RUNTIME_OUTPUT_DIRECTORY`
   设成仓库根 → `/root/es/emulationstation`（117 MB）。照 ROCKNIX 树的路径去找会把"链接成功"
-  当成"编译失败"（`build/k72-find-esbin.sh` 用日志里的 `Built target` + `find` 双重确认）。
+  当成"编译失败"（`tools/misc/diagnostics/k72-find-esbin.sh` 用日志里的 `Built target` + `find` 双重确认）。
 - 依赖：`apt install gettext`。CMake 只在 `msgfmt + msgmerge + xgettext + Intl` 都在时才给
   `HAVE_INTL`；缺了它，26.04 的 libstdc++ 15 会让 `<iomanip>`→`<locale>` 拉进 `<libintl.h>`，
   和 ES 自带的 `ngettext` 回退实现撞成 `ambiguating new declaration`。**别删 ES 的回退**
   （这版 glibc 的 `<libintl.h>` 没有 `pgettext`，删了会变链接错误）。
 - GitHub 的 archive tarball 不含子模块：pugixml 要按 `.gitmodules` 里 pin 的 sha 单独取
-  （`build/k72-esrn-fix-pugixml.sh`）。
+  （`scripts/k72-esrn-fix-pugixml.sh`）。
 
-**冒烟测试故意分两阶段**（`build/es-smoke-device.sh`，跑在板子上，由 `/root/es-watch.sh` 在
-链接完成那一刻自己触发；宿主侧 `build/k72-esrn-autorun.sh` + `build/k72-notify-wait.sh` 负责
+**冒烟测试故意分两阶段**（`tools/emulationstation/verify/es-smoke-device.sh`，跑在板子上，由 `/root/es-watch.sh` 在
+链接完成那一刻自己触发；宿主侧 `tools/emulationstation/runtime/k72-esrn-autorun.sh` + `tools/misc/runtime/k72-notify-wait.sh` 负责
 "跑完了再通知"）：
 
 - **batocera 的 ES 少了 `es_systems.cfg` 会直接退出**（`ERROR es_systems.cfg file does not
@@ -421,14 +440,14 @@ ROCKNIX 的 `emulationstation-next`（`-DGLES3=1`）也编到 73% 停在 `/root/
 
 **主题**用 `anthonycaccese/art-book-next-es`——ROCKNIX 在
 `projects/ROCKNIX/packages/ui/themes/es-theme-art-book-next/package.mk` 里 pin 了 rev + sha256，
-本机 `build/theme-stage-local.sh` 下载后校验到同一个 `7ee1e93f…`；它自己的 README 写明是
+本机 `scripts/theme-stage-local.sh` 下载后校验到同一个 `7ee1e93f…`；它自己的 README 写明是
 **Batocera ES 版**（适用 Batocera v40+/Knulli/ROCKNIX/RetroBat，基座就是
-batocera-emulationstation），所以两支 fork 通用。`build/k72-es-theme-install.sh` 有两处与
+batocera-emulationstation），所以两支 fork 通用。`scripts/k72-es-theme-install.sh` 有两处与
 上游做法不同，都是量出来的：安装用 **`cp -al` 硬链接**（同一文件系统，288 MB 一个字节都不重写），
 以及**默认不裁剪** artwork 变体 —— 这份主题用
 `<path>./_inc/systems/artwork-noir/_default.png</path>` 引用它们，而**不是**
 `<include name="artwork-noir">`，照抄上游那句 `sed` 只删目录不删引用，实测留下 4 个缺失文件 +
-4 处指进已删目录（`build/theme-check-local.py` 把三种做法各测一遍）。装完还会在设备上再跑一次
+4 处指进已删目录（`tools/theme/verify/theme-check-local.py` 把三种做法各测一遍）。装完还会在设备上再跑一次
 引用自检。顺带一条：主题 XML 里写着裸 `&&`（`if="${a} == '1' && …"`），ES 的 tinyxml 能过、
 Python 的 `ElementTree` 不过 —— **"我的解析器报错"不等于"文件坏了"**，checker 先转义再解析。
 
@@ -436,11 +455,11 @@ Python 的 `ElementTree` 不过 —— **"我的解析器报错"不等于"文件
 （Batocera 数据库里同名条目 `retrogame_joypad` 的 A/B 与 X/Y 和我们设备树的顺序是**反的**，
 照抄会静默装反；js 按钮号 = `BTN_*` 码的升序排名）。读能力位图不要解析
 `/sys/.../capabilities/key`（arm64 上是 64 位字且丢前导零），用 `EVIOCGBIT`
-（`build/r36-capdump.py`）。菜单导航在这个 fork 里只认 `up/down/left/right` **或**
+（`tools/capture/r36-capdump.py`）。菜单导航在这个 fork 里只认 `up/down/left/right` **或**
 `joystick1left/joystick1up`（`es-core/src/InputConfig.cpp:229-238`：
 `isMappedLike("left") = isMappedTo("left") || isMappedTo("joystick1left")`，反向由同一绑定取负
 得到）；从 Batocera 模板抄来的 `leftanalog*` 在全代码库**零消费者**，等于白写。所以
-`build/k72-es-sticknav.sh add` 补了两条轴绑定（`value=-1`，`id=0/1`）**并保留十字键**；
+`scripts/k72-es-sticknav.sh add` 补了两条轴绑定（`value=-1`，`id=0/1`）**并保留十字键**；
 方向反了就 `... sticknav.sh flip`，回滚是 `undo`（原文件备份成 `es_input.cfg.pre-sticknav`）。
 
 ## 摇杆键鼠桥和 ES 抢同一个设备（重要）
@@ -459,12 +478,12 @@ Python 的 `ElementTree` 不过 —— **"我的解析器报错"不等于"文件
 - 桥不处理 SIGTERM，每次 stop 都要等 systemd 超时再 SIGKILL，unit 从此显示 `failed`
   —— 那**是"停成功了"**，不是起不来；顺手把 `r36-keymapper.py` 加个信号处理是待办。
 - 抓包侧同理：桥抢占设备时 `evtest` 打在摇杆节点上只有 capability 头、**0 个事件**，别当成
-  "摇杆没信号"；要看原始 `BTN_*` 必须先停桥（`build/k72-evcap.sh` 现在同时抓 4 个节点，
+  "摇杆没信号"；要看原始 `BTN_*` 必须先停桥（`tools/input/diagnostics/k72-evcap.sh` 现在同时抓 4 个节点，
   uinput 那两个按设备名解析）。
 
 ## 换网络 / 交给别人用（这块板子没有键盘也没有串口）
 
-镜像里可以完全不带任何凭据：`R36_BAKE_WIFI=0 bash build/build-rootfs.sh`。
+镜像里可以完全不带任何凭据：`R36_BAKE_WIFI=0 bash scripts/build-rootfs.sh`。
 使用者只需要在 Windows 上往 BOOT(FAT) 分区放一个两行的文本文件：
 
 ```
@@ -500,14 +519,14 @@ WiFi、摇杆 17 键 + 4 轴 + 震动全部实测）。**v20 起默认内核就�
 
 | | 6.12.79 | 7.2.8 |
 | --- | --- | --- |
-| 构建 | `K=/root/r36/linux-6.12.79 bash build/build-all.sh` | `K=/root/r36/linux-7.2.8 bash build/build-all.sh`（16 核 505 秒） |
+| 构建 | `K=/root/r36/linux-6.12.79 bash scripts/build-all.sh` | `K=/root/r36/linux-7.2.8 bash scripts/build-all.sh`（16 核 505 秒） |
 | 补丁层 | 全部干净应用 | 11/24 干净；13 个 panfrost 冲突**直接丢掉**（上游已实现 `SET_LABEL_BO`、`SYSTEM_TIMESTAMP`） |
 | 显示 / 音频 / GPU / WiFi | ✅ | ✅（WiFi 需下面的兼容补丁） |
 | 摇杆 joypad | ✅ | ✅（需下面的 gpiod 改写 + 配套 dtb 极性） |
 
 7.2.8 需要四件事，都在这里：
 
-1. **`build/k72-prepare.sh`** —— 打补丁 + 把 Rocknix 的 `panel-generic-dsi.c` 搬进
+1. **`scripts/k72-prepare.sh`** —— 打补丁 + 把 Rocknix 的 `panel-generic-dsi.c` 搬进
    `drivers/gpu/drm/panel/`（主线没有 `rocknix,generic-dsi`），并把它挂进 Kconfig。
    两个坑：Kconfig 条目必须在最后一个 `endmenu` **之前**，且依赖名是 `DRM_MIPI_DSI`
    而不是 `MIPI_DSI` —— 写错时 `scripts/config --enable` **静默无效**，症状是面板驱动
@@ -516,7 +535,7 @@ WiFi、摇杆 17 键 + 4 轴 + 震动全部实测）。**v20 起默认内核就�
    不再是驱动可用接口，改用 `devm_drm_panel_alloc(dev, struct generic_panel, panel,
    funcs, DRM_MODE_CONNECTOR_DSI)`，它返回 **ERR_PTR**（不是 NULL），所以判空要写
    `IS_ERR/PTR_ERR`。
-3. **`build/aic8800-7.2.8-compat.patch`**（221 行，4 个文件）—— 给 radxa-pkg 那份
+3. **`projects/r36max2/patches/aic8800-7.2.8-compat.patch`**（221 行，4 个文件）—— 给 radxa-pkg 那份
    AIC8800 驱动打上游 API 搬家补丁：`cfg80211_ops` 十几个回调首参
    `net_device *` → `wireless_dev *`（用转发 wrapper，不动函数体）、
    `cfg80211_new_sta/del_sta` 收 wdev、`get_tx_power` 多 `radio_idx`/`link_id`、
@@ -524,7 +543,7 @@ WiFi、摇杆 17 键 + 4 轴 + 震动全部实测）。**v20 起默认内核就�
    **`strncpy()` 已从内核移除** → `strscpy()`、`ieee80211_mgmt` 的 action 内层 union
    变匿名且 `action_code` 上提。打完 `make -C drivers/aic8800 KDIR=<tree> modules`
    零 error，产物与真机验证过的那份**逐字节相同**。
-4. **`build/joypad-gpiod.patch`**（473 行，24 个 hunk，两个文件）—— 把
+4. **`projects/r36max2/patches/joypad-gpiod.patch`**（473 行，24 个 hunk，两个文件）—— 把
    `rocknix-singleadc-joypad.c` / `rocknix-joypad.c` 从整数 GPIO API 改写成 gpiod
    消费者 API，同一份源码在 6.12 与 7.x 都能编。改写本身不难，难的是它牵出两个
    **完全静默**的坑，值得单独写清楚：
@@ -532,7 +551,7 @@ WiFi、摇杆 17 键 + 4 轴 + 震动全部实测）。**v20 起默认内核就�
      等于把每一个 `GPIO_ACTIVE_LOW` 脚的电平反过来。这块板子上：ADC 复用器的
      `amux-en`（低电平才接通）被反过来 → 复用器全程断开，四根轴和电压梯按键全读
      悬空脚；地址位 `amux-a` 被反过来 → 每次选通道都选错。现在的约定写死在
-     `board/rk3326-xifan-r36max2.dts` 的注释里：地址位声明 `ACTIVE_HIGH`（逻辑==物理），
+     `projects/r36max2/dt/rk3326-xifan-r36max2.dts` 的注释里：地址位声明 `ACTIVE_HIGH`（逻辑==物理），
      `amux-en` 保留 `ACTIVE_LOW` 而驱动改成**逻辑断言**（接通写 1），`rumble-gpio`
      实测高电平转 → `ACTIVE_HIGH`。
    - **裸的 `gpios` 属性必须传 `con_id = NULL`。** gpiolib 用
@@ -545,11 +564,11 @@ WiFi、摇杆 17 键 + 4 轴 + 震动全部实测）。**v20 起默认内核就�
      所以 `devm_gpiod_get_optional(dev,"rumble",...)` 看起来"能用"。
    - **改 DT 极性必须重启才生效，重载模块没用；只改驱动则 `rmmod` + `modprobe` 即可。**
    - 判定手法：`cat /sys/kernel/debug/gpio` 看 label 有没有被认领，比读代码猜错误码快得多。
-     抓事件用 `build/k72-evcap.sh` + `build/k72-evread.sh`（注意本机 evtest 1.36
+     抓事件用 `tools/input/diagnostics/k72-evcap.sh` + `tools/input/diagnostics/k72-evread.sh`（注意本机 evtest 1.36
      **没有 `--raw`**，带上它只会写一份 usage 进文件；正常模式事件行是
      `type 1 (EV_KEY), code 304 (BTN_SOUTH), value 1`，`value` 前有逗号）。
    - 真机结果：17 个 GPIO 键 down/up 全部成对，四根轴 `ABS_X/Y/RX/RY` 满行程 ±1800，
-     `adc-keys` 的音量加减正常，震动用 `build/r36-rumble.c` 走标准 FF 通路验证
+     `adc-keys` 的音量加减正常，震动用 `packages/gpu-demos/r36-rumble.c` 走标准 FF 通路验证
      （焊盘 hi=转、随后回 lo=停；`struct ff_effect` 在这个 ABI 上是 **48 字节**，
      自己拼缓冲区会 EFAULT，所以在设备上用 `<linux/input.h>` 编译最稳）。
 
@@ -570,18 +589,18 @@ WiFi、摇杆 17 键 + 4 轴 + 震动全部实测）。**v20 起默认内核就�
 - ~~按键目前只有 input 事件，没有用户空间映射~~ **已解决**：`r36-keymapper`（uinput 键鼠桥）
   已进 v20，掌机按键可以当键盘/鼠标用；但注意它和 EmulationStation 抢同一个设备，
   见上面"摇杆键鼠桥和 ES 抢同一个设备"。
-- **EmulationStation 这一整套目前只存在于那张 64 GB 卡 + `build/` 脚本里，没进镜像**：
+- **EmulationStation 这一整套目前只存在于那张 64 GB 卡 + `scripts/`、`tools/` 脚本里，没进镜像**：
   包括 `/root/es` 编译产物、`es_input.cfg`（含新加的 `joystick1left/up` 轴绑定）、
   `~/.emulationstation/themes/art-book-next`、`es_settings.cfg` 的 `ThemeSet`、
   `/usr/local/bin/r36-es` 和 `r36-osk` 的键名别名修正。要交给别人用得再出一版镜像（v21），
-  把上面这些折进 `build/apply-*.sh` 的流程 —— **别只改卡上，重刷就丢**。
+  把上面这些折进 `scripts/apply-*.sh` 的流程 —— **别只改卡上，重刷就丢**。
 - **ES 还没有真 ROM**：现在跑的 `demo` 系统是假的（"启动"= 写一个标记文件），用来验证
   列表→启动→回列表的回路。真 ROM 在另一张 128 GB 卡上，而那张卡是**绝对不碰**的
   （上面有能用的 ArkOS + ROMS），所以要么由他把 ROM 拷到 64 GB 卡的根分区（还有 ~51 GB 空闲），
   要么另想办法；这一步需要他参与决定拷哪些。
 - **左摇杆导航还没被眼睛确认**：`joystick1left/up` 绑定是照 `InputConfig.cpp` 的判定写进去的，
   原始轴事件也确认过满行程（`ABS_X/Y/RX/RY` ±1800），但"推摇杆光标到底动没动、方向对不对"
-  只有看屏幕才知道 —— 反了就用 `build/k72-es-sticknav.sh flip`。
+  只有看屏幕才知道 —— 反了就用 `scripts/k72-es-sticknav.sh flip`。
 - **weston 的 vblank 丢失又出现了，但形态不同**：2026-10-03 20:49:17 起再次打出
   `[CRTC:39:crtc-0] vblank wait timed out`（`WARNING drivers/gpu/drm/drm_atomic_helper.c:1921`），
   到 21:31 还在间歇增加；**但这一轮 weston 侧 0 条 `Device or resource busy`、画面全程可以操作**。

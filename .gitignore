@@ -27,24 +27,22 @@
 *.rle
 
 # --- 秘密：WiFi 凭据与由它生成的 supplicant 配置 ---
-build/wifi-cred.txt
+**/wifi-cred.txt
 **/wpa_supplicant-*.conf
 **/*.key
 **/id_rsa*
 
-# --- 第三方源码（脚本会自己下载/解压，不在这里再分发一份）---
-build/wifi/
-build/aic-src/
-build/rocknix/
-build/joypad/rocknix-joypad.tar.gz
+# --- 本机 scratch：脚本在这里下载第三方源码（wifi/ aic-src/ rocknix/ joypad/）、
+#     跑 CMake（es-app/ es-core/）、放中间产物。仓库里不放 build/ 下的任何文件。
+build/
 
 # --- 从设备/卡上抓下来的原始物证，体积大且与代码无关 ---
 artifacts/
 downloads/
 logs/
-out/*.img
-out/*.img.xz
-shots/screen-*.png
+distributions/*.img
+distributions/*.img.xz
+documentation/PER_DEVICE_DOCUMENTATION/r36max2/images/screen-*.png
 
 # --- 本机杂项 ---
 *.pdf
@@ -56,8 +54,8 @@ Thumbs.db
 desktop.ini
 
 # 保留：README 引用的两张验收图
-!shots/gl-frame.png
-!001.jpg
+!documentation/PER_DEVICE_DOCUMENTATION/r36max2/images/gl-frame.png
+!documentation/PER_DEVICE_DOCUMENTATION/r36max2/images/001.jpg
 
 # python bytecode from the helper scripts
 __pycache__/
@@ -65,6 +63,3 @@ __pycache__/
 
 # user-downloaded binaries, never in git (132MB AppImage tested on the board)
 *.AppImage
-
-# large vendored upstream data - keep the extracted result + its URL instead
-build/vendor/

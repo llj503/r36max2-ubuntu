@@ -1,0 +1,17 @@
+name: lint
+
+# 只检查语法与目录约定。镜像构建需要 WSL + aarch64 交叉工具链 + 一块真机，
+# 不在 CI 里做。
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - run: make lint
