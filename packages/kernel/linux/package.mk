@@ -52,11 +52,17 @@ post_patch() {
 
 config DRM_PANEL_GENERIC_DSI
 	tristate "Generic DSI panel with a textual panel_description"
-	depends on OF && MIPI_DSI
+	depends on OF && DRM_MIPI_DSI
 	help
 	  Carried over from ROCKNIX: matches a DSI panel by the init sequence
 	  description string in the DT instead of a hard-coded panel list.
 KCONFIG
+  # "depends on MIPI_DSI" is not a typo fix: mainline has no MIPI_DSI symbol, the
+  # DSI helper is gated by DRM_MIPI_DSI.  A dependency on a symbol that does not
+  # exist makes this one INVISIBLE, so oldconfig silently discarded the
+  # CONFIG_DRM_PANEL_GENERIC_DSI=y from linux.aarch64.conf, panel-generic-dsi.o was
+  # never compiled, and Image still built fine - a black panel with no serial
+  # console to find it.  make_target asserts the .o for exactly that reason.
   grep -q panel-generic-dsi ${PKG_BUILD}/drivers/gpu/drm/panel/Makefile || \
     echo 'obj-$(CONFIG_DRM_PANEL_GENERIC_DSI) += panel-generic-dsi.o' >> ${PKG_BUILD}/drivers/gpu/drm/panel/Makefile
 
@@ -105,6 +111,14 @@ pre_make_target() {
 
 make_target() {
   kernel_make Image modules
+
+  # the panel driver is the one thing a failed build cannot be noticed about on
+  # this board: no UART, no keyboard, and the symptom is a dark screen
+  grep -qx 'CONFIG_DRM_PANEL_GENERIC_DSI=y' ${PKG_BUILD}/.config ||
+    die "linux: .config has no CONFIG_DRM_PANEL_GENERIC_DSI=y - the symbol is invisible, check its depends"
+  [ -e ${PKG_BUILD}/drivers/gpu/drm/panel/panel-generic-dsi.o ] ||
+    die "linux: panel-generic-dsi.o was not built - the DSI panel would come up black"
+
   for dtb in ${R36_DTBS}; do
     kernel_make rockchip/${dtb}.dtb
   done
