@@ -34,7 +34,7 @@ exit 0
 EOS
   chmod 755 ${INSTALL}/usr/local/sbin/audio
 
-  cat > ${INSTALL}/etc/systemd/system/audio.service <<'EOS'
+  cat > ${INSTALL}/usr/lib/systemd/system/audio.service <<'EOS'
 [Unit]
 Description=r36max2 audio defaults (amp mux + usable volume)
 After=sound.target multi-user.target

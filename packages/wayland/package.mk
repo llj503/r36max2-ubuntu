@@ -8,7 +8,7 @@ PKG_VERSION="1.0"
 PKG_LICENSE="GPL-2.0-or-later"
 PKG_SITE="https://github.com/llj503/r36max2-ubuntu"
 PKG_URL=""
-PKG_DEPENDS_TARGET="rootfs-apt r36-keymapper r36-osk"
+PKG_DEPENDS_TARGET="rootfs-apt keymapper osk"
 PKG_LONGDESC="Weston session (installed-not-enabled) + joypad bridge wiring."
 PKG_TOOLCHAIN="manual"
 

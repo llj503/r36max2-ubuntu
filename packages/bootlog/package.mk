@@ -17,7 +17,7 @@ make_target() {
 
 makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-bootlog ${INSTALL}/usr/local/sbin/r36-bootlog
-  install -m 644 ${PKG_DIR}/r36-bootlog.service ${INSTALL}/etc/systemd/system/
-  install -m 644 ${PKG_DIR}/r36-bootlog.timer ${INSTALL}/etc/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-bootlog.service ${INSTALL}/usr/lib/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-bootlog.timer ${INSTALL}/usr/lib/systemd/system/
   enable_service r36-bootlog.timer
 }

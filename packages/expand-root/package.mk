@@ -18,6 +18,6 @@ make_target() {
 makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-expand-root ${INSTALL}/usr/local/sbin/r36-expand-root
   install -m 755 ${PKG_DIR}/r36-finish-expand ${INSTALL}/usr/local/sbin/r36-finish-expand
-  install -m 644 ${PKG_DIR}/r36-resize-root.service ${INSTALL}/etc/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-resize-root.service ${INSTALL}/usr/lib/systemd/system/
   enable_service r36-resize-root.service
 }

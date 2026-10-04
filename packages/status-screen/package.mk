@@ -20,6 +20,6 @@ make_target() {
 
 makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-status-screen ${INSTALL}/usr/local/sbin/r36-status-screen
-  install -m 644 ${PKG_DIR}/r36-status-screen.service ${INSTALL}/etc/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-status-screen.service ${INSTALL}/usr/lib/systemd/system/
   enable_service r36-status-screen.service
 }

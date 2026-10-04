@@ -19,8 +19,8 @@ make_target() {
 
 makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-keymapper.py ${INSTALL}/usr/local/bin/r36-keymapper.py
-  install -m 644 ${PKG_DIR}/r36-keymapper.service ${INSTALL}/etc/systemd/system/
-  install -m 644 ${PKG_DIR}/r36-hostkeys.service ${INSTALL}/etc/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-keymapper.service ${INSTALL}/usr/lib/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-hostkeys.service ${INSTALL}/usr/lib/systemd/system/
   enable_service r36-hostkeys.service
 
   # sshd must not start before host keys exist (v20-hostkeys.py logic)

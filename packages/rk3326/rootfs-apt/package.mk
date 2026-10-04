@@ -268,10 +268,12 @@ EOS
   local W="${R}/etc/systemd/system"
   mkdir -p "${W}/multi-user.target.wants" "${W}/sysinit.target.wants" \
            "${W}/sockets.target.wants" "${W}/timers.target.wants"
-  ln -sf /etc/systemd/system/r36-wpa@.service          "${W}/multi-user.target.wants/r36-wpa@wlan0.service"
-  ln -sf /etc/systemd/system/r36-wifi-setup.service    "${W}/multi-user.target.wants/r36-wifi-setup.service"
-  ln -sf /etc/systemd/system/r36-wifi-setup.timer      "${W}/timers.target.wants/r36-wifi-setup.timer"
-  ln -sf /etc/systemd/system/r36-audio.service         "${W}/multi-user.target.wants/r36-audio.service"
+  ln -sf /usr/lib/systemd/system/r36-wpa@.service          "${W}/multi-user.target.wants/r36-wpa@wlan0.service"
+  # only the templated instance is enabled from here - enable_service cannot
+  # instantiate a template.  the other r36-* units are enabled by their own
+  # packages, and r36-audio.service in particular was a link to a unit nobody
+  # ships (the audio package installs audio.service), i.e. a dangling wants
+  # symlink on every card and a not-found unit at boot.
   ln -sf /lib/systemd/system/systemd-timesyncd.service "${W}/multi-user.target.wants/systemd-timesyncd.service"
   ln -sf /lib/systemd/system/ssh.service               "${W}/multi-user.target.wants/ssh.service"
   ln -sf /lib/systemd/system/ssh.socket                "${W}/sockets.target.wants/ssh.socket"

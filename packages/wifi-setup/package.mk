@@ -18,13 +18,13 @@ make_target() {
 
 makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-wifi-setup ${INSTALL}/usr/local/sbin/r36-wifi-setup
-  install -m 644 ${PKG_DIR}/r36-wifi-setup.service ${INSTALL}/etc/systemd/system/
-  install -m 644 ${PKG_DIR}/r36-wifi-setup.timer ${INSTALL}/etc/systemd/system/
-  install -m 644 ${PKG_DIR}/r36-wpa@.service ${INSTALL}/etc/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-wifi-setup.service ${INSTALL}/usr/lib/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-wifi-setup.timer ${INSTALL}/usr/lib/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-wpa@.service ${INSTALL}/usr/lib/systemd/system/
   enable_service r36-wifi-setup.service
   enable_service r36-wifi-setup.timer
   # the instantiated instance is what multi-user pulls in
   mkdir -p ${INSTALL}/etc/systemd/system/multi-user.target.wants
-    ln -sf /etc/systemd/system/r36-wpa@.service \
+    ln -sf /usr/lib/systemd/system/r36-wpa@.service \
       ${INSTALL}/etc/systemd/system/multi-user.target.wants/r36-wpa@wlan0.service
 }

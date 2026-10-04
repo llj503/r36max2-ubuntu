@@ -17,6 +17,6 @@ make_target() {
 
 makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-usb-gadget ${INSTALL}/usr/local/sbin/r36-usb-gadget
-  install -m 644 ${PKG_DIR}/r36-usb-gadget.service ${INSTALL}/etc/systemd/system/
+  install -m 644 ${PKG_DIR}/r36-usb-gadget.service ${INSTALL}/usr/lib/systemd/system/
   enable_service r36-usb-gadget.service
 }
