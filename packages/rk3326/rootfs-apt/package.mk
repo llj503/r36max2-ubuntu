@@ -155,26 +155,58 @@ QEOF
   # never walk a still-mounted proc/dev (live PIDs -> chown dies); the mountpoint
   # dirs must be empty before anything chowns the tree
   while SUDO mountpoint -q "${R}/proc" 2>/dev/null; do sleep 1; done
+  build_msg "CLR_OK" "STEP" "1 unmounts done" "indent"
   rm -rf "${R}/debs"
   # dpkg ran as root; hand the tree back to the build user for the config
   # steps below (everything is chowned back to root at the very end)
   SUDO chown -R "$(id -u):$(id -g)" "${R}" 2>/dev/null || true
+  build_msg "CLR_OK" "STEP" "2 tree handed back to $(id -un)" "indent"
 
   # --- device config (all verified on hardware, see documentation/) ----------
-  echo "r36max2" > "${R}/etc/hostname"
-  ln -sf /usr/share/zoneinfo/Asia/Shanghai "${R}/etc/localtime"
+  echo "r36max2" > "${R}/etc/hostname" || die "rootfs-apt: cannot write /etc/hostname"
+  ln -sf /usr/share/zoneinfo/Asia/Shanghai "${R}/etc/localtime" ||
+    die "rootfs-apt: cannot set /etc/localtime"
   echo "Asia/Shanghai" > "${R}/etc/timezone"
+  build_msg "CLR_OK" "STEP" "3 hostname/timezone written" "indent"
 
-  SUDO chroot "${R}" /bin/sh -c "
-    groupadd -f netdev;
-    echo 'root:ubuntu' | chpasswd;
-    useradd -m -s /bin/bash ubuntu 2>/dev/null || true;
-    echo 'ubuntu:ubuntu' | chpasswd;
-    usermod -aG sudo,netdev ubuntu;
-    mkdir -p /etc/ssh/sshd_config.d;
-  "
+  # Accounts must be created inside the chroot (useradd needs the target's /etc/passwd
+  # and shadow, and the image's own adduser config applies).  Same rule as the manifest
+  # above: do not hand a multi-statement quoted string across the root session - the
+  # first run of this recipe died on exactly this call, and the log could only name
+  # `wsl.exe -u root -- "$@"`, not what broke.  A script file has no quoting to lose.
+  local U="${BUILD}/.${PKG_NAME}-accounts.sh"
+  cat > "${U}" <<'UEOF'
+#!/bin/sh
+# $1 = chroot dir
+set -e
+chroot "$1" /bin/sh -euc '
+  groupadd -f netdev
+  echo "root:ubuntu" | chpasswd
+  useradd -m -s /bin/bash ubuntu || true
+  echo "ubuntu:ubuntu" | chpasswd
+  usermod -aG sudo,netdev ubuntu
+'
+UEOF
+  chmod 755 "${U}"
+  SUDO bash "${U}" "${R}" || { rm -f "${U}"; die "rootfs-apt: account setup failed inside the chroot"; }
+  rm -f "${U}"
+  # The accounts chroot runs as root, so anything it creates inside the tree lands
+  # root-owned - and every step after this one writes as the build user.  That is what
+  # killed the first two runs here: `mkdir -p /etc/ssh/sshd_config.d` ran inside the
+  # chroot, and the `printf ... > .../99-r36.conf` right after it died with Permission
+  # denied while the framework could only report `wsl.exe -u root -- "$@"` as the
+  # failing command.  Hand the tree back once more, then own the directory ourselves.
+  SUDO chown -R "$(id -u):$(id -g)" "${R}" 2>/dev/null || true
+  build_msg "CLR_OK" "STEP" "4 accounts created (ubuntu in passwd: $(grep -c '^ubuntu:' "${R}/etc/passwd")), tree back to $(id -un)" "indent"
+  # the tree is the build user's again at this point, so the file below is written here
+  # rather than inside the chroot; it is chowned to root at the end of this recipe
+  mkdir -p "${R}/etc/ssh/sshd_config.d"
+  [ -w "${R}/etc/ssh/sshd_config.d" ] ||
+    die "rootfs-apt: sshd_config.d not writable by $(id -un) (owner $(stat -c%U "${R}/etc/ssh/sshd_config.d"))"
   printf 'PermitRootLogin yes\nPasswordAuthentication yes\n' \
-    > "${R}/etc/ssh/sshd_config.d/99-r36.conf"
+    > "${R}/etc/ssh/sshd_config.d/99-r36.conf" ||
+    die "rootfs-apt: cannot write the sshd drop-in (owner $(stat -c%U "${R}/etc/ssh/sshd_config.d"))"
+  build_msg "CLR_OK" "STEP" "5 sshd drop-in written" "indent"
 
   mkdir -p "${R}/etc/wpa_supplicant" "${R}/etc/systemd/network"
   # no credentials in the image: BOOT:\wifi.txt is the only input channel
@@ -223,6 +255,7 @@ NET
 NTP=203.107.6.88 ntp.aliyun.com cn.pool.ntp.org
 EOS
   printf 'LANG=C.UTF-8\n' > "${R}/etc/default/locale"
+  build_msg "CLR_OK" "STEP" "6 wpa/network/modules-load/timesyncd/locale written" "indent"
 
   # --- enable / mask set (apply-v19.sh section 5, carried over) --------------
   local W="${R}/etc/systemd/system"
@@ -250,17 +283,20 @@ EOS
   for t in suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target sleep.target; do
     ln -sf /dev/null "${W}/$t"
   done
+  build_msg "CLR_OK" "STEP" "7 units enabled/masked (wants: $(ls "${W}/multi-user.target.wants" 2>/dev/null | wc -l) links)" "indent"
 
   # --- re-mirror the multiarch sysroot (headers/libs arrived with the apt
   # layer: SDL2/mesa/drm -dev etc.) so cross builds (gpu-demos, emulationstation)
   # link against exactly what the image ships
   local SR="${SYSROOT_PREFIX}"
   rm -rf "${SR}/usr/include" "${SR}/usr/lib/aarch64-linux-gnu" "${SR}/lib/aarch64-linux-gnu"
-  cp -a "${R}/usr/include" "${SR}/usr/include"
+  cp -a "${R}/usr/include" "${SR}/usr/include" ||
+    die "rootfs-apt: cannot re-mirror headers into ${SR}/usr/include"
   [ -d "${R}/usr/lib/aarch64-linux-gnu" ] && \
     cp -a "${R}/usr/lib/aarch64-linux-gnu" "${SR}/usr/lib/aarch64-linux-gnu"
   [ -d "${R}/lib/aarch64-linux-gnu" ] && \
     cp -a "${R}/lib/aarch64-linux-gnu" "${SR}/lib/aarch64-linux-gnu"
+  build_msg "CLR_OK" "STEP" "8 sysroot re-mirrored for cross builds" "indent"
 
   # runtime resolver: public DNS only (policy change vs v20, see header)
   printf 'nameserver 223.5.5.5\n' > "${R}/etc/resolv.conf"
