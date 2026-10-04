@@ -35,13 +35,24 @@ PARENT_PKG="${2:-${PKG_NAME}:${TARGET}}"
 
 pkg_lock "${PKG_NAME}:${TARGET}" "install" "${PARENT_PKG}"
 
-STAMP=${STAMPS_INSTALL}/${PKG_NAME}/install_${TARGET}
+# ${STAMPS_INSTALL} does not exist anywhere in this tree - config/path defines
+# STAMPS=$BUILD/.stamps and scripts/build uses ${STAMPS}/${PKG_NAME}/build_${TARGET},
+# so the install stamp follows the same shape.  It also has to carry the package's
+# deep hash: scripts/build already dropped it, so an install stamp that only checks
+# existence would keep the FIRST merged copy of a recipe forever and silently ship
+# stale files after every recipe edit (which is how this build is driven).
+STAMP=${STAMPS}/${PKG_NAME}/install_${TARGET}
+PKG_DEEPHASH=$(calculate_stamp)
 if [ -f ${STAMP} ]; then
-  pkg_lock_status "UNLOCK" "${PKG_NAME}:${TARGET}" "install" "already installed"
-  exit 0
+  . ${STAMP}
+  if [ "${PKG_DEEPHASH}" = "${STAMP_PKG_DEEPHASH}" ]; then
+    pkg_lock_status "UNLOCK" "${PKG_NAME}:${TARGET}" "install" "already installed"
+    exit 0
+  fi
+  rm -f ${STAMP}
 fi
 
-mkdir -p ${STAMPS_INSTALL}/${PKG_NAME}
+mkdir -p ${STAMPS}/${PKG_NAME}
 
 ${SCRIPTS}/build "${1}" "${PARENT_PKG}"
 
@@ -185,6 +196,8 @@ fi
 
 release_update_lock
 
-touch ${STAMP}
+for i in PKG_NAME PKG_DEEPHASH; do
+  echo "STAMP_${i}=\"${!i}\"" >>${STAMP}
+done
 
 pkg_lock_status "UNLOCK" "${PKG_NAME}:${TARGET}" "install" "installed"
