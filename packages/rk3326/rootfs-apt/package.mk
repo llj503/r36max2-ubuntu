@@ -28,6 +28,7 @@ PKG_TOOLCHAIN="manual"
 R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   iputils-ping curl wget vim git htop tmux less procps kmod usbutils tzdata net-tools \
   udev systemd-timesyncd python3 alsa-utils evtest input-utils rfkill libnss-mdns fdisk \
+  wireless-regdb \
   build-essential pkg-config tree jq rsync unzip file \
   mesa-utils glmark2 libegl1 libgles2 libgbm1 \
   libgbm-dev libegl-dev libgles-dev libdrm-dev \
