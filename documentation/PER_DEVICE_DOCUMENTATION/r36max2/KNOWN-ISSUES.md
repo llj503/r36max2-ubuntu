@@ -44,6 +44,17 @@
 - **（v21 实测）状态页的 `batt: ?%`，但内核是知道电量的**：`/sys/class/power_supply/rk817-battery`
   在，`cap=99 status=Discharging`，`voltage_now` 为空。`r36-status-screen` 大概读的是
   `voltage_now` 或者别的供电路径，需要跟着 `capacity` 改。
+- **`systemctl is-enabled` 对**所有** r36 单元报 `disabled`，但它们其实开机就跑了** —— 这是个
+  诊断陷阱，已经骗过两次。`config/functions` 的 `enable_service` 把 `*.wants/` 软链写进
+  `/usr/lib/systemd/system/`（ROCKNIX 的习惯），而 Ubuntu 自己的单元（`ssh`、
+  `systemd-networkd`、`systemd-timesyncd`）是装在 `/etc/systemd/system/` 下的。systemd
+  扫描依赖时**两棵树都认**，所以单元确实被拉起；但 `is-enabled`/`UnitFileState` 只看
+  `/etc`，于是回 `disabled`。实机对照：`r36-expand-root` 是 `UnitFileState=disabled`
+  而同一次开机它把根分区从 3.9 G 扩到 58 G（journal 有 `Finished r36max2 ... grow the
+  root partition`）；`systemd-networkd` 因为链接在 `/etc` 才回 `enabled`。
+  看这些单元的状态要用 `is-active` + `journalctl -u`，或者查 `*.wants/` 里有没有链；
+  `scripts/image` 就是按后者断言的。要改成统一写进 `/etc` 需要重做所有包的 enable 并重新
+  验证，暂未做。
 - **睡眠能进不能出**：`echo mem` 进得去，电源键和 RTC 闹钟都叫不醒（只能长按强制断电）。
   `wakeup-source` 和 pwrkey 的 `power/wakeup` 都是好的，怀疑主线 `rk8xx` 没把 PMIC 中断注册成
   wakeirq，而厂商 BSP 依赖私有的 `rockchip,sleep-mode-config` + `rk817_slppin_*` 引脚复用。
