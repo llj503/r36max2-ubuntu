@@ -31,7 +31,16 @@ while :; do
 	IFACES=$(ls /sys/class/net | tr '\n' ' ')
 	WPA=$(systemctl is-active r36-wpa@wlan0.service 2>/dev/null)
 	FAILED=$(systemctl --failed --no-legend --plain 2>/dev/null | wc -l)
-	BAT=$(cat /sys/class/power_supply/battery/capacity 2>/dev/null)
+	# Not /sys/class/power_supply/battery: this kernel registers the fuel gauge as
+	# rk817-battery and creates no generic "battery" symlink at all (measured - the
+	# directory holds exactly rk817-battery and rk817-charger), so the hardcoded path
+	# resolved to nothing and the page printed "batt: ?%" while capacity read 99.
+	BAT=""
+	for d in /sys/class/power_supply/*; do
+		[ "$(cat "$d/type" 2>/dev/null)" = Battery ] || continue
+		BAT=$(cat "$d/capacity" 2>/dev/null)
+		[ -n "$BAT" ] && break
+	done
 
 	chvt 1 2>/dev/null
 	printf '\033[H\033[2J' > /dev/tty1 2>/dev/null
