@@ -2,13 +2,55 @@
 
 [← 返回 README](../../../README.md)
 
+- ~~**（v21，未定位）AIC8800DC 在枚举后约 32.6 s 从 USB 总线上消失**~~ **已定位并修好：掉的是
+  `vbus_host` 那一路电，不是驱动、不是省电。**
+  原现象：`usb 1-1: USB disconnect, device number 2`，掉线前 dmesg 完全静默，
+  九次开机对齐到枚举时刻是 32.601…32.614 s。
+  定案的证据链来自 v21 出厂镜像的一整场开机（`BOOT:\r36-timeline.txt`，tick 每 3 s）：
+  `33.762865 s` `vbus_host: disabling` → `41.229879 s`
+  `aicwf_usb_bus_txmsg: Txmsg wait timed out` → `45.283053 s`
+  `cmd_mgr_queue cmd timed-out ... 117-MM_GET_STA_INFO_REQ`，此后 `rwnx_cmds.c` 把命令队列
+  锁进 `RWNX_CMD_MGR_STATE_CRASHED`，一直到 664 s 还在刷 `cmd queue crashed`。这一场里 USB
+  设备没掉、`networkd` 的地址也还在（`192.168.0.141/24`），所以症状是"连着但什么都不通"。
+  `vbus_host` 是 `&u2phy` 的 `otg-port` 的 `ext-supply`：otg-port 在 33.7 s 放掉引用，
+  稳压器就把模块的电撤了。给这个节点补 `regulator-always-on` 之后同一条时间线里
+  `vbus_host: disabling`、`Txmsg wait timed out`、`cmd queue crashed`、`USB disconnect`
+  四条全为零，uptime 373 s 时 ping 通、SSH 进得去、板子上 `curl https://api.github.com`
+  返回 `HTTP/2 200`，`iw` 报 `signal -20 dBm`。
+  当初排除过的方向都留在这里，因为它们**确实**都被实测过（每条一次独立开机取数）：
+  芯片电源 `vbus_wifi`（全程 `use>=1`，单独加 always-on 无效——真正被撤的是另一路
+  `vbus_host`）、dwc2/EHCI runtime PM（掉线前 hcd 与子设备都是 `active`）、驱动
+  （黑名单后整场没有 `wlan0`，仍在同一时刻掉）、固件版本（4.0 与 5.0 都掉，4.0 还连不上）、
+  关联与流量（不关联也掉）、蓝牙（`blacklist btusb` 后照样掉）、芯片省电
+  （`ps_on=0 dpsm=0` 无效；修好之后 `ps_on=Y` 也照样稳定，所以省电不是原因）、
+  OTG 模拟开关 `gpio0_A7`（钉在 bootloader 电平，无效）、第二组 EHCI/OHCI 口（保持 disabled）。
+  两条教训写在这里：**掉线时"地址还在"不等于链路可用**，判据得是能不能真的收发；
+  以及 `regulator_summary` 里名字相近的两路 `vbus_wifi` / `vbus_host` 要分开看，
+  当时只盯住前者，白跑了七八场开机。
+- **（v21 实测）镜像里的 EmulationStation 缺内嵌资源，没主题时屏幕基本是空的。**
+  SSH 里直接跑 `emulationstation`（`/root/.emulationstation/themes` 为空）：进程不退出
+  （20 s 与 150 s 两次都活着），但 3362 行日志里 3353 行是
+  `Could not find appropriate font face for character N for font :/ubuntu_condensed.ttf`，
+  另有 `:/help/button_a.svg missing`、`System "demo" path does not exist`、
+  `No systems found!`、`sh: 1: /usr/bin/serial_number_check: not found`。
+  `:/...` 是编译进二进制的 Qt 资源路径，说明这份产物没有把字体和帮助图标打进 `.qrc`
+  —— 也就是说光换主题不解决，字都画不出来。**注意 `/dev/fb0` 抓不到 ES 的画面**：
+  ES 走 DRM plane 出图，fbdev 那一份只有控制台（实测抓到的是 `r36-status-screen` 的
+  文字），要看 ES 只能拍照。
+- **（v21 实测）状态页的 `batt: ?%`，但内核是知道电量的**：`/sys/class/power_supply/rk817-battery`
+  在，`cap=99 status=Discharging`，`voltage_now` 为空。`r36-status-screen` 大概读的是
+  `voltage_now` 或者别的供电路径，需要跟着 `capacity` 改。
 - **睡眠能进不能出**：`echo mem` 进得去，电源键和 RTC 闹钟都叫不醒（只能长按强制断电）。
   `wakeup-source` 和 pwrkey 的 `power/wakeup` 都是好的，怀疑主线 `rk8xx` 没把 PMIC 中断注册成
   wakeirq，而厂商 BSP 依赖私有的 `rockchip,sleep-mode-config` + `rk817_slppin_*` 引脚复用。
   目前 `suspend/hibernate/sleep.target` 全 mask，电源键 `HandlePowerKey=ignore`
   （装了 udev 之后 logind 会开始抓 KEY_POWER，默认是 poweroff，实测短按就关机）。
   **测睡眠前一定先设 RTC 闹钟**，否则就是把设备关进小黑屋。
-- 蓝牙 `hci0: command 0x204b tx timeout`：AIC 的 BT 固件没配好，必要时 blacklist `btusb`。
+- 蓝牙 `hci0: command 0x2048/0x204b tx timeout`：AIC 的 BT 固件没配好。注意
+  **`blacklist btusb` 不能修上面那条 32.6 s 掉线**（v21 实测：黑名单生效后
+  `/sys/class/bluetooth` 为空、`/sys/bus/usb/drivers/btusb` 目录为空，芯片仍在同一
+  时刻掉），但镜像里没有 bluez（`/usr/lib/bluetooth`、`bluetoothd` 都不存在），
+  所以这颗模块的 BT 功能本来就不可用；要不要继续 blacklist 只影响 `hci0` 是否出现。
 - ~~按键目前只有 input 事件，没有用户空间映射~~ **已解决**：`r36-keymapper`（uinput 键鼠桥）
   已进 v20，掌机按键可以当键盘/鼠标用；但注意它和 EmulationStation 抢同一个设备，
   见 [EMULATIONSTATION.md](EMULATIONSTATION.md) 的"摇杆键鼠桥和 ES 抢同一个设备"。

@@ -265,6 +265,22 @@ for n in "null c 1 3 666" "zero c 1 5 666" "random c 1 8 666" "urandom c 1 9 666
   SUDO mknod -m "$3" "${MNT}/root/dev/$1" "$2" "$4" "$5" 2>/dev/null || true
 done
 SUDO rm -f "${MNT}/root/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service"
+# Two ownership facts the build gets wrong on its own, both measured on hardware
+# after booting the packed image: the filesystem's top directory came out owned by
+# the build user (uid 1000, which is *ubuntu* in this image, so / was owned by the
+# unprivileged account and tmpfiles logged "unsafe path transition / (owned by
+# ubuntu)" on every boot), and useradd's home directory was re-owned to root by
+# rootfs-apt's closing "chown -R root:root", leaving ubuntu unable to read its own
+# $HOME (login then spammed Permission denied from ~/.bashrc and the user generator).
+SUDO chown root:root "${MNT}/root"
+SUDO chmod 0755 "${MNT}/root"
+ug=$(SUDO awk -F: '$1=="ubuntu"{print $3":"$4}' "${MNT}/root/etc/passwd")
+if [ -n "${ug}" ]; then
+  SUDO chown -R "${ug}" "${MNT}/root/home/ubuntu"
+  SUDO chmod 0750 "${MNT}/root/home/ubuntu"
+else
+  v "  !! no ubuntu account in the packed rootfs - \$HOME ownership not fixed"
+fi
 # deterministic build info: SOURCE_DATE_EPOCH, not wall clock
 echo "kernel=${KVER} base=ubuntu-${OS_VERSION} apt-snapshot=${APT_SNAPSHOT} epoch=${SOURCE_DATE_EPOCH} wayland=installed-not-enabled credentials=none" \
   | SUDO tee "${MNT}/root/etc/r36max2-build-info" >/dev/null
@@ -315,8 +331,39 @@ nl=$(SUDO wc -l < "${MNT}/root/etc/r36max2/dpkg-manifest.txt" 2>/dev/null || ech
   || { v "  !! dpkg manifest has ${nl} lines - the package db did not survive the root session (escapes eaten in transit?)"; fail=1; }
 v "  dpkg manifest: ${nl} packages"
 v "modules-load.d: $(SUDO tr '\n' ' ' < "${MNT}/root/etc/modules-load.d/r36max2.conf")"
+# Ownership of these two directories is not something the build reaches correctly -
+# see the fix in step [5] - and both were only visible once the image was running.
+v "/ owner: $(SUDO stat -c '%U:%G %a' "${MNT}/root") (must be root:root 755)"
+[ "$(SUDO stat -c '%u:%g' "${MNT}/root")" = "0:0" ] || fail=1
+h_owner=$(SUDO stat -c '%u:%g' "${MNT}/root/home/ubuntu" 2>/dev/null || echo none)
+want=$(SUDO awk -F: '$1=="ubuntu"{print $3":"$4}' "${MNT}/root/etc/passwd")
+v "/home/ubuntu owner: ${h_owner} (must be ${want}, the account's own uid:gid)"
+[ "${h_owner}" = "${want}" ] || fail=1
 for d in "${MNT}/boot/rk3326-xifan-r36max2.dtb"; do
   v "FAT $(basename $d) gpio flags: $(SUDO dtc -I dtb -O dts "$d" 2>/dev/null | grep -E 'rumble-gpio|amux-a-gpios' | tr -s ' \t' ' ' | tr '\n' ' ')"
+  # Two properties the board cannot work without, asserted against the dtb that is
+  # actually in the image rather than against the source file: without dr_mode="host"
+  # dwc2 never starts its hcd, so it never enables vbus_wifi and the AIC8800DC does not
+  # enumerate for the entire boot; without regulator-always-on the module's power is
+  # owned by a controller reference count.  Both live only in projects/RK3326/dt/, so a
+  # silently skipped kernel package (stamp not invalidated) would ship the old dtb and
+  # the only symptom would be "no wlan0" on hardware with no console.
+  DTB_DTS=$(SUDO dtc -I dtb -O dts "$d" 2>/dev/null)
+  echo "$DTB_DTS" | awk '/usb@ff300000/{f=1} f && /dr_mode = "host"/{ok=1} f && /^\t\t\};/{f=0} END{exit !ok}' \
+    || die "$(basename $d): usb@ff300000 is not dr_mode=\"host\" - the WiFi module would never enumerate"
+  echo "$DTB_DTS" | awk '/vbus_wifi/{f=1} f && /regulator-always-on/{ok=1} f && /^\t\t\};/{f=0} END{exit !ok}' \
+    || die "$(basename $d): vbus_wifi has no regulator-always-on - a controller could drop the module's power"
+  # vbus_host is the u2phy otg-port's ext-supply.  Left switchable, the port dropped
+  # its reference 33.7 s into a boot and the AIC firmware stopped answering 7 s later,
+  # latching the driver's command queue into CRASHED for the rest of the run while the
+  # lease and the USB device both stayed visible - so the symptom was "connected but
+  # nothing works", which no log line on the host would explain.
+  echo "$DTB_DTS" | awk '
+      !f && /^[ \t]*vbus_host[ \t]*\{/ { f=1; ind=$0; sub(/vbus_host.*$/, "", ind); next }
+      f && $0 ~ /^\t*regulator-always-on;/ { ok=1 }
+      f && $0 == ind"};" { f=0 }
+      END { exit !ok }' \
+    || die "$(basename $d): vbus_host has no regulator-always-on - the otg-port can power the WiFi module off mid-boot"
 done
 
 # --- the three assertions the v20 card had to teach the hard way --------------
@@ -332,10 +379,11 @@ for want in multi-user.target.wants/r36-wifi-setup.service \
             multi-user.target.wants/r36-wpa@wlan0.service \
             multi-user.target.wants/r36-status-screen.service \
             multi-user.target.wants/r36-resize-root.service \
+            multi-user.target.wants/r36-expand-root.service \
             multi-user.target.wants/r36-fwswap.service \
-            multi-user.target.wants/r36-usb-gadget.service \
             multi-user.target.wants/r36-hostkeys.service \
             multi-user.target.wants/audio.service \
+            multi-user.target.wants/systemd-networkd.service \
             timers.target.wants/r36-wifi-setup.timer \
             timers.target.wants/r36-bootlog.timer; do
   where=""
@@ -344,6 +392,18 @@ for want in multi-user.target.wants/r36-wifi-setup.service \
   done
   [ -n "${where}" ] || { v "  !! not enabled: ${want}"; fail=1; units_ok=0; }
 done
+# r36-usb-gadget must NOT be enabled: the OTG controller is the WiFi module's
+# (it enumerates as usb 1-1 on dwc2), so in the host mode WiFi requires there is no
+# UDC, and the unit only burns its 90 s start timeout before failing.  Asserted
+# negatively because ${BUILD}/image/system is merged into, never wiped - a link that
+# an older build's enable_service created survives even after the recipe stops
+# calling it, which is exactly how this unit came back after being un-enabled.
+for base in etc usr/lib; do
+  if SUDO test -e "${MNT}/root/${base}/systemd/system/multi-user.target.wants/r36-usb-gadget.service"; then
+    die "r36-usb-gadget.service is enabled in ${base} - it cannot work on this board (no UDC while WiFi owns the OTG port); delete the stale wants link from ${BUILD}/image/system"
+  fi
+done
+
 # a link whose target does not exist *inside the image*.  `find -xtype l` cannot
 # express that: it resolves an absolute symlink against the build host's /, so every
 # /lib/systemd/system/... link in a mounted rootfs looked broken and the check cried

@@ -20,4 +20,10 @@ makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-finish-expand ${INSTALL}/usr/local/sbin/r36-finish-expand
   install -m 644 ${PKG_DIR}/r36-resize-root.service ${INSTALL}/usr/lib/systemd/system/
   enable_service r36-resize-root.service
+  # Stage 1 needs its own unit: r36-resize-root only finishes the job (it is gated
+  # on /var/lib/r36-expand-pending, which stage 1 creates), so shipping just that
+  # one left nothing to run r36-expand-root.  Measured on hardware: root stayed at
+  # 3.9 GiB of a 58 GiB card and the unit logged "skipped, unmet condition check".
+  install -m 644 ${PKG_DIR}/r36-expand-root.service ${INSTALL}/usr/lib/systemd/system/
+  enable_service r36-expand-root.service
 }

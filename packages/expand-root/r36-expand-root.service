@@ -1,0 +1,13 @@
+[Unit]
+Description=r36max2 grow the root partition to fill the card
+Documentation=file:/usr/local/sbin/r36-expand-root
+After=local-fs.target
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/r36-expand-root
+
+[Install]
+WantedBy=multi-user.target

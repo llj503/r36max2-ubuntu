@@ -396,6 +396,15 @@
 		regulator-boot-on;
 	};
 	
+	/*
+	 * This rail is the WiFi module's power, not a connector VBUS: it is
+	 * referenced by &usb20_otg, so with only regulator-boot-on its state is
+	 * owned by a controller reference count and anything that stops the hcd
+	 * can pull the module's power out from under it.  The community aurknix
+	 * DTB for this same board has always-on here and no vbus-supply on the
+	 * controller at all; we need host mode, so keep the reference but make
+	 * the rail itself unswitchable.
+	 */
 	vbus_host1: vbus_host1 {
 		compatible = "regulator-fixed";
 		regulator-name = "vbus_wifi";
@@ -406,8 +415,26 @@
 		pinctrl-names = "default";
 		enable-active-low;
 		regulator-boot-on;
+		regulator-always-on;
 	};
 	
+	/*
+	 * This rail is the u2phy otg-port's ext-supply, and the WiFi module dies
+	 * when it is released: measured on the shipped v21 image, the otg-port gave
+	 * up its reference at 33.762865 s ("vbus_host: disabling"), the first command
+	 * sent after that never came back (41.229879 s "aicwf_usb_bus_txmsg: Txmsg
+	 * wait timed out", 45.283053 s "cmd_mgr_queue cmd timed-out
+	 * 117-MM_GET_STA_INFO_REQ"), and rwnx_cmds.c latched the command manager into
+	 * RWNX_CMD_MGR_STATE_CRASHED for the rest of the boot - the USB device stayed
+	 * on the bus and networkd kept the lease, so the interface looked up while
+	 * every packet path was dead.  Same rail, same second, in the earlier boots
+	 * where the module dropped off the bus outright.
+	 *
+	 * With the rail pinned on, the link was still up and usable at 373 s: ping,
+	 * ssh, DHCP default route and outbound HTTPS all answered, and none of the
+	 * four lines above appeared again.  So this is not driver power save
+	 * (ps_on=Y was set in both runs); it is the module losing its supply.
+	 */
 	vbus_host: vbus_host {
 		compatible = "regulator-fixed";
 		regulator-name = "vbus_host";
@@ -418,6 +445,7 @@
 		pinctrl-names = "default";
 		enable-active-low;
 		regulator-boot-on;
+		regulator-always-on;
 	};
 };
 
@@ -898,9 +926,21 @@
 };
 
 
+/*
+ * The AIC8800DC hangs off this controller, behind an analog switch whose
+ * power-on side is the module (gpio0_A7: mainline has no consumer for the
+ * vendor DT's switch-gpios, so it stays where the bootloader left it - measured
+ * to make no difference when driven).
+ *
+ * dr_mode = "otg" is not an option on this kernel: with otg, dwc2 never starts
+ * its hcd, so it never calls dwc2_vbus_supply_init(), vbus_wifi stays at use=0
+ * with its enable line raw-high (= off for this active-low rail) and the chip
+ * does not enumerate for the entire boot - measured over 49 ticks in one boot,
+ * /sys/class/net holding only lo.  Host mode is what makes the module appear.
+ */
 &usb20_otg {
 	status = "okay";
-	dr_mode = "otg";
+	dr_mode = "host";
 	vbus-supply = <&vbus_host1>;
 };
 
