@@ -3,8 +3,12 @@
 [← 返回 README](../../../README.md)
 
 ```bash
+# 镜像本体不入库（.gitignore 排除了 distributions/*.img.xz，里面含 AIC 厂商固件 blob），
+# 所以下面这个路径是你自己构建出来的产物，或你本地留存的那一份；仓库里只有它的 sha256。
 # 只刷 64 GB 那张卡；插回电脑后先确认设备号，别写错盘
-xzcat distributions/r36max2-ubuntu-v20.img.xz | sudo dd of=/dev/sdX bs=8M status=progress oflag=sync
+xzcat target/r36max2-ubuntu-v21.img.xz | sudo dd of=/dev/sdX bs=8M status=progress oflag=sync
+# 写前先对一遍校验和（distributions/ 里存着每一版的记录）
+sha256sum -c target/r36max2-ubuntu-v21.img.xz.sha256
 ```
 
 开机约 40 秒后 tty1 会出现状态页（IP、信号、失败单元、电量）。想关掉就在 BOOT 分区建空文件
