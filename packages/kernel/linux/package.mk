@@ -75,18 +75,6 @@ KCONFIG
   # console to find it.  make_target asserts the .o for exactly that reason.
   grep -q panel-generic-dsi ${PKG_BUILD}/drivers/gpu/drm/panel/Makefile || \
     echo 'obj-$(CONFIG_DRM_PANEL_GENERIC_DSI) += panel-generic-dsi.o' >> ${PKG_BUILD}/drivers/gpu/drm/panel/Makefile
-
-  # install the board device trees (repo is the single source of truth) and
-  # wire them into the rockchip Makefile
-  for f in ${PROJECT_DIR}/${PROJECT}/dt/*.dts ${PROJECT_DIR}/${PROJECT}/dt/*.dtsi; do
-    [ -e "${f}" ] || continue
-    cp -f "${f}" ${PKG_BUILD}/arch/arm64/boot/dts/rockchip/
-  done
-  for dtb in ${R36_DTBS}; do
-    if ! grep -q "${dtb}.dtb" ${PKG_BUILD}/arch/arm64/boot/dts/rockchip/Makefile; then
-      echo "dtb-\$(CONFIG_ARCH_ROCKCHIP) += ${dtb}.dtb" >> ${PKG_BUILD}/arch/arm64/boot/dts/rockchip/Makefile
-    fi
-  done
 }
 
 make_host() {
@@ -106,6 +94,24 @@ makeinstall_host() {
 }
 
 pre_make_target() {
+  # The board device trees are copied in here, not in post_patch.  PKG_STAMP hashes
+  # projects/<P>/dt precisely so a dts edit cannot be skipped - but that only
+  # invalidates build/install, and post_patch belongs to the patch phase, which does
+  # not re-run.  Measured after a dts-only change: the repo dts was 29195 bytes and
+  # the kernel tree still held the 28123-byte copy from three hours earlier, so
+  # make dtbs rebuilt nothing, install staged the old 63819-byte .dtb, and the only
+  # reason it was caught is that scripts/image asserts dr_mode/always-on against the
+  # dtb that is actually in the image.
+  for f in ${PROJECT_DIR}/${PROJECT}/dt/*.dts ${PROJECT_DIR}/${PROJECT}/dt/*.dtsi; do
+    [ -e "${f}" ] || continue
+    cp -f "${f}" ${PKG_BUILD}/arch/arm64/boot/dts/rockchip/
+  done
+  for dtb in ${R36_DTBS}; do
+    if ! grep -q "${dtb}.dtb" ${PKG_BUILD}/arch/arm64/boot/dts/rockchip/Makefile; then
+      echo "dtb-\$(CONFIG_ARCH_ROCKCHIP) += ${dtb}.dtb" >> ${PKG_BUILD}/arch/arm64/boot/dts/rockchip/Makefile
+    fi
+  done
+
   cp ${PROJECT_DIR}/${PROJECT}/linux/linux.aarch64.conf ${PKG_BUILD}/.config
 
   # deterministic build identity (see config/options)
