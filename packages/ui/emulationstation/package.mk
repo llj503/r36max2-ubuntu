@@ -79,4 +79,18 @@ makeinstall_target() {
   [ -f "${BIN}" ] || die "emulationstation: binary not found after build"
   mkdir -p ${INSTALL}/usr/local/bin
     cp "${BIN}" ${INSTALL}/usr/local/bin/emulationstation
+
+  # resources/ must ship next to the binary.  This tree is not optional and is not
+  # the theme: ResourceManager probes ~/.emulationstation/resources, the data dir,
+  # the executable's own directory and the cwd, and fonts/help icons/flags resolve
+  # only from it.  Shipping just the ELF - what this recipe used to do - produced a
+  # binary that ran without crashing and drew nothing: 3429 of 3438 log lines on the
+  # board were "Could not find appropriate font face for character N for font
+  # :/ubuntu_condensed.ttf", plus ":/help/button_a.svg missing".  Copying the same
+  # 14 MB tree to /usr/local/bin/resources on that board and rerunning left a 5-line
+  # log with zero font and zero help-icon errors, so this is the fix, not a guess.
+  # Nothing else in the tree provides it: the theme package is not shipped in v21.
+  [ -d "${PKG_BUILD}/resources" ] ||
+    die "emulationstation: no resources/ in the source tree - ES would start with no fonts"
+  cp -a "${PKG_BUILD}/resources" ${INSTALL}/usr/local/bin/resources
 }

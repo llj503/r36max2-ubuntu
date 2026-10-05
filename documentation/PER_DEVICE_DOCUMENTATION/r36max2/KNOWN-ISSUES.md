@@ -27,16 +27,20 @@
   两条教训写在这里：**掉线时"地址还在"不等于链路可用**，判据得是能不能真的收发；
   以及 `regulator_summary` 里名字相近的两路 `vbus_wifi` / `vbus_host` 要分开看，
   当时只盯住前者，白跑了七八场开机。
-- **（v21 实测）镜像里的 EmulationStation 缺内嵌资源，没主题时屏幕基本是空的。**
+- ~~**（v21 实测）镜像里的 EmulationStation 缺内嵌资源，没主题时屏幕基本是空的**~~
+  **已修：`resources/` 那棵树必须跟二进制一起装，它不是主题。**
   SSH 里直接跑 `emulationstation`（`/root/.emulationstation/themes` 为空）：进程不退出
-  （20 s 与 150 s 两次都活着），但 3362 行日志里 3353 行是
+  （20 s 与 150 s 两次都活着），但 3438 行日志里 3429 行是
   `Could not find appropriate font face for character N for font :/ubuntu_condensed.ttf`，
-  另有 `:/help/button_a.svg missing`、`System "demo" path does not exist`、
-  `No systems found!`、`sh: 1: /usr/bin/serial_number_check: not found`。
-  `:/...` 是编译进二进制的 Qt 资源路径，说明这份产物没有把字体和帮助图标打进 `.qrc`
-  —— 也就是说光换主题不解决，字都画不出来。**注意 `/dev/fb0` 抓不到 ES 的画面**：
-  ES 走 DRM plane 出图，fbdev 那一份只有控制台（实测抓到的是 `r36-status-screen` 的
-  文字），要看 ES 只能拍照。
+  另有 `:/help/button_a.svg missing`。`:/...` 不是编译进二进制的 Qt 资源（源码树里
+  根本没有 `.qrc`，`strings` 也搜不到字体内部名），`ResourceManager` 是按
+  `~/.emulationstation/resources`、数据目录、**可执行文件同目录**、cwd 这个顺序去找
+  真实文件的。把源码里那 14 MB / 145 文件的 `resources/` 拷到板子的
+  `/usr/local/bin/resources` 再跑一次：日志从 3438 行掉到 **5 行，字体与帮助图标错误
+  都是 0**。剩下的 `No systems found!`（卡上没有 ROM）和 `serial_number_check not found`
+  是另一回事。
+  **注意 `/dev/fb0` 抓不到 ES 的画面**：ES 走 DRM plane 出图，fbdev 那份只有控制台
+  （实测抓到的是 `r36-status-screen` 的文字），要看 ES 只能拍照。
 - **（v21 实测）状态页的 `batt: ?%`，但内核是知道电量的**：`/sys/class/power_supply/rk817-battery`
   在，`cap=99 status=Discharging`，`voltage_now` 为空。`r36-status-screen` 大概读的是
   `voltage_now` 或者别的供电路径，需要跟着 `capacity` 改。
