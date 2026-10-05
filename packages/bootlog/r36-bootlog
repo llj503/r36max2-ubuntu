@@ -84,6 +84,20 @@ log "chip id   : $(dmesg | grep -m1 -iE 'chip_id=|unsupported id' )"
 log "uploads   : $(dmesg | grep -iE 'Upload |upload fail|calib' | tail -6 | tr '\n' ' | ')"
 log "wlan state: $(dmesg | grep -iE 'aic8800_fdrv|register interface' | tail -4 | tr '\n' ' | ')"
 log ""
+# Which identity is actually on the bus.  aic_load_fw binds the chip in ROM mode and
+# uploads firmware; the chip then re-enumerates under a DIFFERENT usb id and
+# aic8800_fdrv must match that second one.  So "both modules loaded, fw release
+# printed, no wlan0" can only be read from the device table - and the report used to
+# say nothing about it, which is exactly the question the first v21 boots left open.
+log "--- usb enumeration ---"
+for p in /sys/bus/usb/devices/*/; do
+    [ -f "$p/idVendor" ] || continue
+    log "  $(basename $p) $(cat $p/idVendor 2>/dev/null):$(cat $p/idProduct 2>/dev/null) speed=$(cat $p/speed 2>/dev/null)M if=$(cat $p/bNumInterfaces 2>/dev/null) driver=$(basename $(readlink $p/driver) 2>/dev/null) product=$(cat $p/product 2>/dev/null)"
+done
+log "  net ifaces: $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
+log "  dmesg tail:"
+dmesg | grep -iE 'aic|wlan|usb [0-9]-|new (high|full|low|super) speed|firmware' | tail -20 | sed 's/^/    /' >> "$OUT"
+log ""
 log "--- usb gadget (Type-C) ---"
 log "UDC       : $(cat /sys/kernel/config/usb_gadget/g1/UDC 2>/dev/null)"
 log "functions : $(ls /sys/kernel/config/usb_gadget/g1/functions 2>/dev/null | tr '\n' ' ')"
