@@ -25,7 +25,11 @@ PKG_LONGDESC="Mainline kernel ${PKG_VERSION} for the R36 Max 2."
 # kernel config changed no hash at all and the tree kept booting a kernel built from
 # the old .config.  That is why the RD_GZIP fix sat in git while the card went on
 # resetting: the rebuilt image contained the same Image as before.
-PKG_STAMP="${KERNEL_TARGET} ${R36_DTBS} $(find ${PROJECT_DIR}/${PROJECT}/linux -name '*.conf' -print0 2>/dev/null | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
+# The dt sources must be in here: without them a change under projects/<P>/dt/
+# left the stamp unchanged, so the package was skipped and the image silently
+# shipped the previous dtbs (the board then boots a device tree you edited and
+# never see).
+PKG_STAMP="${KERNEL_TARGET} ${R36_DTBS} $(find ${PROJECT_DIR}/${PROJECT}/linux ${PROJECT_DIR}/${PROJECT}/dt -name '*.conf' -o -name '*.dts' -o -name '*.dtsi' -print0 2>/dev/null | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
 
 PKG_PATCH_DIRS="board"
 

@@ -111,6 +111,13 @@ CONF
   chmod 755 "${R}/usr/sbin/policy-rc.d"
 
   SUDO mount --rbind /dev "${R}/dev" 2>/dev/null || true
+  # Make the copy private before anything unmounts it.  `umount -R "${R}/dev"`
+  # below would otherwise propagate through the shared peer group and take the
+  # HOST's /dev/pts with it - measured: the next `sudo` after "STEP 1 unmounts
+  # done" died with "unable to allocate pty: No such device", because Ubuntu's
+  # sudoers sets Defaults use_pty and NOPASSWD makes that the only reason to
+  # need a pty.  Every later privileged step in the recipe then fails.
+  SUDO mount --make-rprivate "${R}/dev" 2>/dev/null || true
   SUDO mount -t proc proc "${R}/proc" 2>/dev/null || true
 
   # Every chroot below runs arm64 binaries on an x86_64 host.  Without a binfmt
@@ -284,6 +291,13 @@ EOS
   mkdir -p "${W}/multi-user.target.wants" "${W}/sysinit.target.wants" \
            "${W}/sockets.target.wants" "${W}/timers.target.wants"
   ln -sf /usr/lib/systemd/system/r36-wpa@.service          "${W}/multi-user.target.wants/r36-wpa@wlan0.service"
+  # systemd-networkd is what actually runs DHCP for wlan0 (etc/systemd/network/
+  # 80-wlan0.network), but nothing in this tree ever enabled it: the router listed
+  # the board as associated with 0.0.0.0, and the card reported
+  # "systemd-networkd: active=inactive enabled=disabled".  The only thing that ever
+  # started it was r36-wifi-setup's "wifi.txt changed" branch, which early-exits on
+  # an unchanged file - so on a normal boot no client ever asked for a lease.
+  ln -sf /lib/systemd/system/systemd-networkd.service     "${W}/multi-user.target.wants/systemd-networkd.service"
   # only the templated instance is enabled from here - enable_service cannot
   # instantiate a template.  the other r36-* units are enabled by their own
   # packages, and r36-audio.service in particular was a link to a unit nobody

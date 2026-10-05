@@ -1,7 +1,12 @@
 [Unit]
 Description=r36max2 status report to the BOOT partition
-After=multi-user.target network-online.target
-Wants=network-online.target
+# Deliberately NOT After=multi-user.target and no Wants=network-online.target:
+# this is the flight recorder, so it must not depend on the things it is there to
+# diagnose.  Measured on the flashed v21 image - a 90 s start timeout in an
+# unrelated unit delayed multi-user.target, and the first report of the boot
+# landed at uptime 96 s, i.e. after the thing worth recording had already
+# happened.  It needs /usr and the mmc block device, nothing more.
+After=sysinit.target local-fs.target
 
 [Service]
 Type=oneshot
