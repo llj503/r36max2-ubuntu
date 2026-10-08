@@ -21,7 +21,12 @@ PKG_LONGDESC="Libretro core: PlayStation."
 PKG_TOOLCHAIN="manual"
 
 make_target() {
-  make -f Makefile.libretro platform=unix CC="${CC}" CXX="${CXX}"
+  # cd is not decoration. This tree ships a ./configure, so the framework gives it an
+  # out-of-tree build directory and runs make_target() inside
+  # ${PKG_BUILD}/.aarch64-r36max2-linux-gnu - which is empty, so "-f Makefile.libretro"
+  # died with "No such file or directory" while the same command by hand in
+  # ${PKG_BUILD} built fine. fceumm never hit this because it has no configure.
+  cd ${PKG_BUILD} && make -f Makefile.libretro platform=unix CC="${CC}" CXX="${CXX}"
 }
 
 makeinstall_target() {

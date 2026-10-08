@@ -21,7 +21,7 @@ PKG_LONGDESC="Libretro core: GBA (Game Boy Advance)."
 PKG_TOOLCHAIN="manual"
 
 make_target() {
-  make -f Makefile.libretro platform=unix CC="${CC}" CXX="${CXX}"
+  cd ${PKG_BUILD} && make -f Makefile.libretro platform=unix CC="${CC}" CXX="${CXX}"
 }
 
 makeinstall_target() {

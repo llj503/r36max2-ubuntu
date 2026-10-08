@@ -35,7 +35,7 @@ make_target() {
   # No CFLAGS/CXXFLAGS on purpose: a core's own Makefile.libretro picks its
   # optimisation, and the framework's hardening/pic flags land on files compiled
   # without -fPIC in the same rule, which is what broke the first attempt here.
-  make -f Makefile.libretro platform=unix CC="${CC}" CXX="${CXX}"
+  cd ${PKG_BUILD} && make -f Makefile.libretro platform=unix CC="${CC}" CXX="${CXX}"
 }
 
 makeinstall_target() {
