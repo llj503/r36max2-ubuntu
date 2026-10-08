@@ -53,9 +53,12 @@ documentation/PER_DEVICE_DOCUMENTATION/r36max2/images/screen-*.png
 Thumbs.db
 desktop.ini
 
-# 保留：README 引用的两张验收图
-!documentation/PER_DEVICE_DOCUMENTATION/r36max2/images/gl-frame.png
-!documentation/PER_DEVICE_DOCUMENTATION/r36max2/images/001.jpg
+# 保留：文档引用的截图。上面 *.png / *.jpg 是全局忽略，一条目录级例外必须写在它们
+# 之后（gitignore 是最后匹配的规则说话），否则新加的文档配图会**静默**不进仓库，
+# 文档里的链接在别人的检出里就是坏图。
+!documentation/PER_DEVICE_DOCUMENTATION/r36max2/images/*
+# 例外里的例外：临时抓屏文件（screen-*.png）不是文档配图。
+documentation/PER_DEVICE_DOCUMENTATION/r36max2/images/screen-*.png
 
 # python bytecode from the helper scripts
 __pycache__/

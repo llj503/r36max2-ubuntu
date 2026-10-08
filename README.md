@@ -33,6 +33,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核 
 | 摇杆→鼠标/键盘（uinput 桥） | ✅ 17 键 + 4 轴全部实机配对；但**跑 ES 时要停桥**（抢设备） | [JOYPAD-BRIDGE.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/JOYPAD-BRIDGE.md) |
 | 虚拟键盘（`r36-osk`：uinput + wofi 网格） | ✅ 按键流已无人值守逐事件验证；点击那一步要屏幕能用 | [OSK.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/OSK.md) |
 | EmulationStation（batocera 分支，桌面 GL） | ✅ 117 MB 二进制，**不需要 weston**：`r36-es --kmsdrm` 下目视确认出画面、摇杆切条目方向正确；22 秒窗口内内核 stall 计数 0→0 | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
+| 模拟器核（RetroArch + libretro，自编 8 个核 / 8 个系统） | ✅ nes·snes·gb·gbc·gba·psx 满速；dreamcast 55–59 fps（基本满速）；saturn 能启动出图但只有 14–15 fps。全部用游戏包里的**真游戏**在板子上两点取斜率量过，DC/SS 还截到了 SEGA 授权画面 | [EMULATORS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATORS.md) |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
@@ -56,6 +57,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核 
 | weston 会话、截图为什么拿不到、vblank 卡死 | [WAYLAND.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WAYLAND.md) |
 | 摇杆当键鼠、屏上键盘 | [JOYPAD-BRIDGE.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/JOYPAD-BRIDGE.md)、[OSK.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/OSK.md) |
 | 1 GB 内存上编出并跑起 EmulationStation | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
+| 模拟器核怎么编、怎么启动、每个系统实测多少帧、BIOS 放哪 | [EMULATORS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATORS.md) |
 | 7.2.8 怎么打上 ROCKNIX 的补丁层、6.12.79 那条线去哪了 | [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
 | 换网络 / 交给别人用（不带凭据的镜像） | [WIFI-AND-SHARING.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md) |
 | 还没解决的问题 | [KNOWN-ISSUES.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KNOWN-ISSUES.md) |

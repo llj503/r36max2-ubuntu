@@ -32,6 +32,17 @@ emulationstation-next@cada856d(ROCKNIX,v20 真机校验过的同一 tarball)、
 art-book-next-es@9a50ef36(同 v20 主题 pin)。厂商 u-boot 三 blob 不可分发,
 `scripts/extract-vendor-blobs.sh` 从现成 ArkOS 卡 dd 出来,哈希记录后强校验。
 
+## 模拟器层（v21 出镜像之后加进来的）
+
+Ubuntu 仓库里有 RetroArch 但**一个 libretro 核都没有**，所以 8 个核全部由
+`packages/libretro/*/package.mk` 从 pin 死的 commit 交叉编译（策略：能编就编，编不了才拷 ——
+目前没有一个核是拷来的）。启动链是 `ES → r36-play → retroarch --appendconfig=/etc/r36/retroarch.cfg`，
+成绩与踩的坑（flycast 的 `platform=arm64`/`AS`/atomics、satune 与 mgba 的 LTO、三家 BIOS 的
+不同路径、以及"标称 FPS 不能当成绩"这件事）都在
+[EMULATORS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATORS.md)。
+`scripts/image` 现在逐条核对镜像里的 `es_systems.cfg`：每个 `<core>` 要有对应的 `.so`，
+每个 `<path>` 要存在且非空。
+
 ## 其它变化
 
 - **单内核**:v20 的双内核保险(6.12.79 同卡回退)按决定移除,镜像只带 7.2 系最新,
