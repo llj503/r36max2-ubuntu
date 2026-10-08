@@ -25,6 +25,12 @@ PKG_TOOLCHAIN="manual"
 # the exact package set v20 shipped on the device (base from build-rootfs.sh,
 # device + dev chains from apply-v19.sh, wayland stack from apply-wayland.sh,
 # ES cross-build deps appended)
+#
+# retroarch is the emulator front end for the libretro cores. It comes from the
+# archive (resolute has 1.22.2+dfsg for arm64); the cores themselves have no Ubuntu
+# packages at all - searching "libretro" in resolute answers "No such package" - so
+# each core is built by its own packages/libretro/<name> recipe and installs into
+# /usr/lib/libretro, which is where es_systems.cfg points RetroArch with -L.
 R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   iputils-ping curl wget vim git htop tmux less procps kmod usbutils tzdata net-tools \
   udev systemd-timesyncd python3 alsa-utils evtest input-utils rfkill libnss-mdns fdisk \
@@ -35,7 +41,8 @@ R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   weston wayland-protocols libwayland-dev libwayland-bin grim wf-recorder foot wofi kbd cmake \
   libsdl2-dev libsdl2-mixer-dev libfreeimage-dev libavcodec-dev libavformat-dev libswscale-dev \
   libcurl4-openssl-dev libasound2-dev libudev-dev libfreetype-dev libfmt-dev \
-  rapidjson-dev libvlc-dev gettext"
+  rapidjson-dev libvlc-dev gettext \
+  retroarch"
 
 make_target() {
   :

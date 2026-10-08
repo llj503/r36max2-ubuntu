@@ -18,6 +18,19 @@ make_target() {
 
 makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-es ${INSTALL}/usr/local/bin/r36-es
+  install -m 755 ${PKG_DIR}/r36-play ${INSTALL}/usr/local/bin/r36-play
+
+  # The ROM tree has to exist before ES starts, or a system whose <path> is missing is
+  # dropped from the list silently (the "demo" entry proved this: ES logged
+  # 'System "demo" path does not exist !' and then showed nothing). Directory names
+  # match the user's ROM pack so games can be copied in without renaming.
+  mkdir -p ${INSTALL}/roms
+  for s in nes snes gb gbc gba fds megadrive mastersystem gamegear pcengine pcfx \
+           atari2600 atari7800 atarilynx coleco vectrex neogeo cps1 cps2 arcade \
+           fbneo psx n64 saturn dreamcast psp nds gw chaiplus; do
+    mkdir -p ${INSTALL}/roms/${s}
+  done
+  mkdir -p ${INSTALL}/roms/bios
 
   # ES reads two filenames and nothing else - es_input.cfg and es_systems.cfg - looked
   # up in ~/.emulationstation first, then /etc/emulationstation.  Installing the

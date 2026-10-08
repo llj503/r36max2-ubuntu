@@ -1,0 +1,48 @@
+#!/bin/sh
+# r36-play - the single launch wrapper ES uses for libretro systems.
+#
+# Why a wrapper at all: ES-DE looks at <command> and, unless it already contains
+# %EMULATOR%/-emulator and %CORE%/-core, appends " -emulator <name> -core <name>"
+# itself (es-app/src/FileData.cpp:553-557). That is exactly the information we need
+# per launch, so the cfg stays a plain "<wrapper> %ROM%" and this script takes the
+# two flags. RetroArch would abort on "-emulator", so it must be consumed here.
+#
+# Cores live in /usr/lib/libretro/<core>_libretro.so - installed by the
+# packages/libretro/* recipes, because Ubuntu has no libretro core packages.
+set -u
+
+emu=""
+core=""
+rom=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-emulator) emu="${2:-}"; shift 2 ;;
+		-core)     core="${2:-}"; shift 2 ;;
+		*)         rom="$1"; shift ;;
+	esac
+done
+
+if [ -z "$rom" ]; then
+	echo "r36-play: no ROM given (usage: r36-play <rom> [-emulator E] [-core C])" >&2
+	exit 2
+fi
+if [ -n "$emu" ] && [ "$emu" != retroarch ]; then
+	echo "r36-play: emulator '$emu' is not wired up here; only retroarch cores are built" >&2
+	exit 3
+fi
+if [ -z "$core" ]; then
+	echo "r36-play: ES passed no -core, so there is no libretro library to load" >&2
+	exit 4
+fi
+
+SO="/usr/lib/libretro/${core}_libretro.so"
+if [ ! -f "$SO" ]; then
+	echo "r36-play: core not installed: $SO" >&2
+	echo "  present: $(ls /usr/lib/libretro 2>/dev/null | tr '\n' ' ')" >&2
+	exit 5
+fi
+
+RA_CFG="$HOME/.config/retroarch/retroarch.cfg"
+[ -f "$RA_CFG" ] || RA_CFG=""
+
+exec retroarch ${RA_CFG:+-c "$RA_CFG"} --fullscreen -L "$SO" "$rom"
