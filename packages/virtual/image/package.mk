@@ -15,6 +15,7 @@ PKG_DEPENDS_TARGET="toolchain rootfs-base rootfs-apt \
   gpu-demos busybox initramfs \
   bootlog status-screen wifi-setup expand-root fwswap \
   usb-gadget audio keymapper osk wayland \
-  emulationstation es-launcher libretro-fceumm"
+  emulationstation es-launcher \
+  libretro-fceumm libretro-snes9x2010 libretro-vba-next libretro-pcsx-rearmed"
 PKG_SECTION="virtual"
 PKG_LONGDESC="Root package: everything that goes into the r36max2 image."
