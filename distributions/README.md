@@ -5,6 +5,10 @@
 镜像就按 [BUILD.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/BUILD.md) 自己构建，
 产物落在 `target/`，再用下面这列哈希对一遍。
 
+**同一版镜像重建一次哈希就变一次，而它记在两个地方**：下面这张表和同名的
+`<文件>.sha256`。2026-10-08 发现这两处已经不一致了（`6a472e1` 只改了 `.sha256`，表里还是上一版
+的哈希），所以改的时候**两处一起改**。
+
 | 文件 | sha256 |
 | --- | --- |
 | `r36max2-ubuntu-v2.img.xz` | `a3b0ccf69faea8747351a91a7efdc48573644d74a1e69222edacedb4514c0b81` |
@@ -26,7 +30,7 @@
 | `r36max2-ubuntu-v18.img.xz` | `da2a12b30a0bbe4b6a1bc6f48d00f41b8e61ab57f98cf9e690482aade0c71510` |
 | `r36max2-ubuntu-v19.img.xz` | `ea1aa41ea33d56b467d2100c333baf8d6c0f55c7cd00b99b63e56a8d018cb282` |
 | `r36max2-ubuntu-v20.img.xz` | `da46854618144d70b49d47cf54ad7aa81bbf59922636e2670c4cbb2e2f66a143` |
-| `r36max2-ubuntu-v21.img.xz` | `ff26014e2663ce6bd730431f7eef29d49adf6879a972673afe96a9d07f7ada36` |
+| `r36max2-ubuntu-v21.img.xz` | `56dcfb2be35de3f6da4133763982b104a445134ec23e0d0ef1526e8d827c0b22` |
 | `r36max2-ubuntu-26.04.img.xz` | `c0df67ce40f27392d8a9d94a6016754f747a0dd87a3be2e499362bf0d699b64a` |
 | `r36max2-ubuntu-alt-arkosblobs.img.xz` | `360ac81678b1344302844d2e89fea541033692c02577de8a15fb65ad12e968d8` |
 
