@@ -42,6 +42,11 @@ makeinstall_target() {
   printf '%s\n' "BIOS files for the systems that need them (psx, saturn, dreamcast, ...)." \
     > ${INSTALL}/roms/bios/.keep
 
+  # RetroArch's board settings, passed with --appendconfig by r36-play. See the header
+  # of the file for why shipping it is not optional.
+  mkdir -p ${INSTALL}/etc/r36
+  install -m 644 ${PKG_DIR}/retroarch.cfg ${INSTALL}/etc/r36/retroarch.cfg
+
   # ES reads two filenames and nothing else - es_input.cfg and es_systems.cfg - looked
   # up in ~/.emulationstation first, then /etc/emulationstation.  Installing the
   # hardware-verified map under its repo name (es-input-r36max2.cfg) left it unread, so

@@ -45,4 +45,11 @@ fi
 RA_CFG="$HOME/.config/retroarch/retroarch.cfg"
 [ -f "$RA_CFG" ] || RA_CFG=""
 
-exec retroarch ${RA_CFG:+-c "$RA_CFG"} --fullscreen -L "$SO" "$rom"
+# The shipped board config wins over the per-user one. Without it RetroArch defaults to
+# PulseAudio, which this image does not have, and the game runs silent (measured: same
+# core, same ROM, no sound until audio_driver="alsa" is forced).
+RA_BOARD=/etc/r36/retroarch.cfg
+
+exec retroarch ${RA_CFG:+-c "$RA_CFG"} \
+	${RA_BOARD:+--appendconfig="$RA_BOARD"} \
+	--fullscreen -L "$SO" "$rom"
