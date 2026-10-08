@@ -12,6 +12,12 @@
 # TARGET_NAME and needs GL headers; the software core is what upstream builds for the
 # buildbot and produces mednafen_saturn_libretro.so.
 #
+# LTO=0: this Makefile turns LTO on by default and adds the GCC-only "-flto=auto -fipa-pta",
+# but our cross gcc was built without LTO, so every translation unit died with
+# "cc1: error: LTO support has not been enabled in this configuration". Unlike flycast,
+# this one does inherit the framework CFLAGS, so -mno-outline-atomics arrives by itself and
+# no libatomic is needed.
+#
 # Pin the commit and hash the commit URL - GitHub embeds the top directory name in the
 # tarball, so the branch URL hashes differently for the same tree.
 
@@ -27,7 +33,7 @@ PKG_TOOLCHAIN="manual"
 
 make_target() {
   cd ${PKG_BUILD} && make -f Makefile platform=unix \
-    CC="${CC}" CXX="${CXX}" HAVE_OPENGL=0 HAVE_CHD=1
+    CC="${CC}" CXX="${CXX}" HAVE_OPENGL=0 HAVE_CHD=1 LTO=0
 }
 
 makeinstall_target() {

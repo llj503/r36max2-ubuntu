@@ -43,6 +43,8 @@ if [ -z "$core" ]; then
 		gb|gbc) core=gambatte ;;
 		gba) core=mgba ;;
 		psx) core=pcsx_rearmed ;;
+		dreamcast) core=flycast ;;
+		saturn) core=mednafen_saturn ;;
 		*)
 			echo "r36-play: no -core given and no default for system '$sys'" >&2
 			exit 4 ;;

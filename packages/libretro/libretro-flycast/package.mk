@@ -18,6 +18,14 @@
 # HAVE_OPENMP=0: nothing in the sysroot provides libgomp, and the Makefile links with
 # -Wl,--no-undefined, so an OpenMP reference is a hard link error rather than a warning.
 #
+# MFLAGS is where -mno-outline-atomics has to go. This Makefile assigns CFLAGS := of its
+# own, so the framework's CFLAGS (which carry that option, and are why the other cores
+# link) never reach it; the core then called __aarch64_swp4_acq_rel / __aarch64_ldadd4_acq_rel
+# and died, because the sysroot has libatomic.so.1 but no linker name for -latomic.
+# MFLAGS is the only flag variable this Makefile leaves alone on the arm64 path (only the
+# x86 branches append to it) and the compile rule interpolates it into both the C and the
+# C++ command. Cortex-A35 has LL/SC exclusives, so inlined atomics are correct, just not LSE.
+#
 # CHD needs no extra dependency: HAVE_CHD=1 compiles libretro-common's clean-room rchd
 # reader, and that directory is committed inside core/libretro-common of this tarball.
 
@@ -33,7 +41,7 @@ PKG_TOOLCHAIN="manual"
 
 make_target() {
   cd ${PKG_BUILD} && make -f Makefile platform=arm64 \
-    CC="${CC}" CXX="${CXX}" AS="${CC}" \
+    CC="${CC}" CXX="${CXX}" AS="${CC}" MFLAGS="-mno-outline-atomics" \
     HAVE_OPENMP=0 HAVE_VULKAN=0 HAVE_CHD=1
 }
 
