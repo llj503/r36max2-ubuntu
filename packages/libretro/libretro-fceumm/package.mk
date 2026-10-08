@@ -18,7 +18,12 @@
 
 PKG_NAME="libretro-fceumm"
 PKG_VERSION="7a542dab1e87679921962a9f056186eca425c0c2"
-PKG_SHA256="c992d909c375be1187b21666b983bb83eeeef30406821a79fbb5548b77cdb1d9"
+# Pin the commit, never refs/heads/<branch>: GitHub's archive tarball embeds the top
+# directory name, so the same commit hashes differently by URL form. Measured here -
+# archive/refs/heads/master.tar.gz is c992d909..., archive/<sha>.tar.gz is f80b5c1d...
+# for the identical tree. The first build of this recipe died on exactly that
+# (10 retries, "Incorrect checksum calculated on downloaded file").
+PKG_SHA256="f80b5c1df39e22d78791b1867ea79f3ec8c0823e4b1f82b3f89e432c614a6c53"
 PKG_LICENSE="GPL-2.0"
 PKG_SITE="https://github.com/libretro/libretro-fceumm"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
