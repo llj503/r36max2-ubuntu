@@ -41,6 +41,14 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/roms/bios
   printf '%s\n' "BIOS files for the systems that need them (psx, saturn, dreamcast, ...)." \
     > ${INSTALL}/roms/bios/.keep
+  # Dreamcast is not a flat file in this board's layout: flycast asks the frontend for
+  # the system directory and then looks for the BIOS inside a dc/ subdir, measured with
+  # the core on hardware - without the subdir it logged "Unable to find bios in
+  # /roms/bios/dc/" and stopped. It also writes dc_nvmem.bin and vmu_save_*.bin there,
+  # so this is the directory the emulated flash lives in, not just a lookup path.
+  mkdir -p ${INSTALL}/roms/bios/dc
+  printf '%s\n' "Put dc_boot.bin here (flycast looks in <system_directory>/dc/, and writes dc_nvmem.bin and vmu_save_*.bin next to it)." \
+    > ${INSTALL}/roms/bios/dc/.keep
 
   # RetroArch's board settings, passed with --appendconfig by r36-play. See the header
   # of the file for why shipping it is not optional.

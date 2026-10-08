@@ -41,9 +41,11 @@
   是另一回事。
   **注意 `/dev/fb0` 抓不到 ES 的画面**：ES 走 DRM plane 出图，fbdev 那份只有控制台
   （实测抓到的是 `r36-status-screen` 的文字），要看 ES 只能拍照。
-- **（v21 实测）状态页的 `batt: ?%`，但内核是知道电量的**：`/sys/class/power_supply/rk817-battery`
-  在，`cap=99 status=Discharging`，`voltage_now` 为空。`r36-status-screen` 大概读的是
-  `voltage_now` 或者别的供电路径，需要跟着 `capacity` 改。
+- ~~**（v21 实测）状态页的 `batt: ?%`，但内核是知道电量的**~~ **已修**：状态页原来写死读
+  `/sys/class/power_supply/battery`，而主线内核把这路 fuel gauge 注册成 **`rk817-battery`，
+  根本不存在通用的 `battery` 别名**（实测该目录只有 `rk817-battery` 与 `rk817-charger`），
+  所以路径解析为空、页面打 `?%`，而同一时刻 `capacity` 读出来是 99。现在按 `type` 找
+  Battery 那一类再读 `capacity`，实测状态页显示 `batt:100%`。
 - **`systemctl is-enabled` 对**所有** r36 单元报 `disabled`，但它们其实开机就跑了** —— 这是个
   诊断陷阱，已经骗过两次。`config/functions` 的 `enable_service` 把 `*.wants/` 软链写进
   `/usr/lib/systemd/system/`（ROCKNIX 的习惯），而 Ubuntu 自己的单元（`ssh`、
@@ -69,25 +71,29 @@
 - ~~按键目前只有 input 事件，没有用户空间映射~~ **已解决**：`r36-keymapper`（uinput 键鼠桥）
   已进 v20，掌机按键可以当键盘/鼠标用；但注意它和 EmulationStation 抢同一个设备，
   见 [EMULATIONSTATION.md](EMULATIONSTATION.md) 的"摇杆键鼠桥和 ES 抢同一个设备"。
-- **EmulationStation 这一整套目前只存在于那张 64 GB 卡 + `scripts/`、`tools/` 脚本里，没进镜像**：
-  包括 `/root/es` 编译产物、`es_input.cfg`（含新加的 `joystick1left/up` 轴绑定）、
-  `~/.emulationstation/themes/art-book-next`、`es_settings.cfg` 的 `ThemeSet`、
-  `/usr/local/bin/r36-es` 和 `r36-osk` 的键名别名修正。要交给别人用得再出一版镜像（v21），
-  把上面这些折进 `scripts/apply-*.sh` 的流程 —— **别只改卡上，重刷就丢**。
+- ~~**EmulationStation 这一整套只存在于那张 64 GB 卡 + 脚本里，没进镜像**~~ **v21 已经全部进镜像**：
+  ES 二进制与它的 `resources/` 树、`es_input.cfg`（含 `joystick1left/up` 轴绑定）、
+  `es_systems.cfg`、`/usr/local/bin/{r36-es,r36-play,r36-osk}`、`/etc/r36/retroarch.cfg`
+  都由 `packages/ui/emulationstation` 与 `packages/rk3326/es-launcher` 安装，
+  打包阶段有断言逐项核对（见 [EMULATORS.md](EMULATORS.md)）。
+  **仍然没进镜像的只有 art-book 主题**（2026-10-04 的决定：先确认裸镜像首启正常再放回，
+  pin 还在 `packages/ui/es-theme-art-book-next`，加回来是一行依赖）。
 - **v20 镜像里 `wifi.txt` 这条通道是死的**（2026-10-04 实测定案）：`/usr/local/sbin/r36-wifi-setup`
   在（4846 B，10-02 18:13），但 **`r36-wifi-setup.service`/`.timer` 从未装进
   `/etc/systemd/system/`**，两个 `*.wants/` 软链里也没有它 —— 没有任何东西去运行它，所以两轮开机
   `BOOT:\wifi-status.txt` 一个字节都没生成。当时还误判过两次：一次怪 `WPA3-SAE`（后来你把 2.4G
   改成 WPA2 了），一次怪 `r36-status-screen` 的只读挂载与它冲突（那句 `Can't mount, would change
   RO state` 确实存在、也确实修了，但它不是这次的堵点）。出镜像那会儿用的 `apply-v19.sh` 还没带
-  第 91 行那句 cp，所以是**历史镜像**的问题：现在的 `scripts/apply-v19.sh` 会装这两个单元，
-  v21 构建完请在卡上确认 `systemctl is-enabled r36-wifi-setup.timer` 是 `enabled`。
+  第 91 行那句 cp，所以是**历史镜像**的问题：`scripts/apply-*.sh` 已经随 v21 框架一起删掉了，
+  现在这两个单元由 `packages/wifi-setup/package.mk` 的 `enable_service` 装，`scripts/image`
+  在打包时核对 enabled 单元列表里有没有它们。v21 实测首启 `wifi.txt` 通道正常工作。
   这张卡已由 usbipd 直通 WSL 手工补装并顺带把烧死的旧网络 `Xiaomi_4FD3` 换成 `360JDCWiFi-E378`
   （`psk` 写的是 PBKDF2 哈希，0600），原件在卡上 `/root/r36-backup-20261004/`。
-- **ES 还没有真 ROM**：现在跑的 `demo` 系统是假的（"启动"= 写一个标记文件），用来验证
-  列表→启动→回列表的回路。真 ROM 在另一张 128 GB 卡上，而那张卡是**绝对不碰**的
-  （上面有能用的 ArkOS + ROMS），所以要么由他把 ROM 拷到 64 GB 卡的根分区（还有 ~51 GB 空闲），
-  要么另想办法；这一步需要他参与决定拷哪些。
+- ~~**ES 还没有真 ROM，跑的是假的 `demo` 系统**~~ **已经有真游戏**：`demo` 早就从
+  `es_systems.cfg` 里删掉了，现在 cfg 里是 8 个真系统（nes/snes/gb/gbc/gba/psx/dreamcast/saturn），
+  每个都用游戏包里的**真游戏**在板子上跑过（方法与被证明的东西见 [EMULATORS.md](EMULATORS.md)）。
+  游戏是拷进 64 GB 卡的 `/roms/<系统>/` 的，**镜像里不带 ROM**，只带空的系统目录和一个
+  说明用的 `.keep`。
 - ~~左摇杆导航还没被眼睛确认~~ **已确认（2026-10-04）**：`joystick1left/up` 是照
   `InputConfig.cpp` 的判定写进去的，目视结果推摇杆能移动光标、能切条目、**方向正确**
   （在 `r36-es --kmsdrm` 下测，weston 全程没启动）。原始轴事件满行程（`ABS_X/Y/RX/RY` ±1800）
