@@ -24,13 +24,23 @@ makeinstall_target() {
   # dropped from the list silently (the "demo" entry proved this: ES logged
   # 'System "demo" path does not exist !' and then showed nothing). Directory names
   # match the user's ROM pack so games can be copied in without renaming.
+  #
+  # Each one carries a .keep file. Empty directories written by makeinstall_target did
+  # not survive into the image at all - the first build of this recipe created 27 of
+  # them and the packed root had none, with no error anywhere - so nothing here trusts
+  # an empty dir to make it through the staging merge, and scripts/image asserts the
+  # tree instead of assuming it.
   mkdir -p ${INSTALL}/roms
   for s in nes snes gb gbc gba fds megadrive mastersystem gamegear pcengine pcfx \
            atari2600 atari7800 atarilynx coleco vectrex neogeo cps1 cps2 arcade \
            fbneo psx n64 saturn dreamcast psp nds gw chaiplus; do
     mkdir -p ${INSTALL}/roms/${s}
+    printf '%s\n' "Drop games for this system here. ES only lists a system once it holds at least one file with an extension its es_systems.cfg entry declares." \
+      > ${INSTALL}/roms/${s}/.keep
   done
   mkdir -p ${INSTALL}/roms/bios
+  printf '%s\n' "BIOS files for the systems that need them (psx, saturn, dreamcast, ...)." \
+    > ${INSTALL}/roms/bios/.keep
 
   # ES reads two filenames and nothing else - es_input.cfg and es_systems.cfg - looked
   # up in ~/.emulationstation first, then /etc/emulationstation.  Installing the

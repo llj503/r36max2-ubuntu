@@ -479,6 +479,23 @@ for r in ubuntu_condensed.ttf help/button_a.svg; do
     || { v "  !! ES resources missing ${r} - it would start with no fonts or help icons"; fail=1; }
 done
 v "  ES resources: $(SUDO find "${MNT}/root/usr/local/bin/resources" -type f 2>/dev/null | wc -l) files, $(SUDO du -sh "${MNT}/root/usr/local/bin/resources" 2>/dev/null | cut -f1)"
+# Emulation without an emulator is the failure this whole slice was about: ES starts,
+# looks fine, and every system is missing because either RetroArch, a core, or the
+# /roms directory it scans is not in the image. Empty directories have disappeared on
+# the way to the packed root before, so the check is "the dir is there and holds
+# something", not "the dir is there".
+SUDO ls "${MNT}/root/usr/bin/retroarch" >/dev/null 2>&1 \
+  || { v "  !! retroarch is not in the image"; fail=1; }
+ncores=$(SUDO ls "${MNT}/root/usr/lib/libretro"/*_libretro.so 2>/dev/null | wc -l)
+v "  libretro cores: ${ncores} ($(SUDO ls "${MNT}/root/usr/lib/libretro" 2>/dev/null | tr '\n' ' '))"
+[ "${ncores}" -ge 1 ] || { v "  !! no libretro core installed - every system would fail to launch"; fail=1; }
+nrom=$(SUDO ls -1d "${MNT}/root/roms"/*/ 2>/dev/null | wc -l)
+v "  /roms system dirs: ${nrom}"
+[ "${nrom}" -ge 20 ] || { v "  !! /roms is missing or nearly empty - ES drops systems whose path does not exist"; fail=1; }
+SUDO grep -q '<name>nes</name>' "${MNT}/root/etc/emulationstation/es_systems.cfg" 2>/dev/null \
+  || { v "  !! es_systems.cfg still has no real system"; fail=1; }
+SUDO ls "${MNT}/root/usr/local/bin/r36-play" >/dev/null 2>&1 \
+  || { v "  !! r36-play missing - ES cannot pass -emulator/-core to retroarch"; fail=1; }
 v "  ES present: binary, launcher, and both cfgs with the verified GUID + stick axes"
 
 # 4. one kernel tree.  A second /lib/modules directory is how a .ko that nothing loads
