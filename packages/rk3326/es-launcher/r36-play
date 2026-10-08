@@ -31,8 +31,23 @@ if [ -n "$emu" ] && [ "$emu" != retroarch ]; then
 	exit 3
 fi
 if [ -z "$core" ]; then
-	echo "r36-play: ES passed no -core, so there is no libretro library to load" >&2
-	exit 4
+	# ES always tells us which core it picked. Outside ES there is no such answer, and
+	# without a fallback this script was untestable by hand - the first verification run
+	# of the six-core image failed all six systems with rc=4 for exactly that reason,
+	# which said nothing about the cores. Use the system the ROM sits under, which is
+	# also the directory name es_systems.cfg declares.
+	sys=$(basename "$(dirname "$rom")")
+	case "$sys" in
+		nes) core=fceumm ;;
+		snes) core=snes9x2010 ;;
+		gb|gbc) core=gambatte ;;
+		gba) core=mgba ;;
+		psx) core=pcsx_rearmed ;;
+		*)
+			echo "r36-play: no -core given and no default for system '$sys'" >&2
+			exit 4 ;;
+	esac
+	echo "r36-play: defaulting to core=$core for system=$sys" >&2
 fi
 
 SO="/usr/lib/libretro/${core}_libretro.so"
