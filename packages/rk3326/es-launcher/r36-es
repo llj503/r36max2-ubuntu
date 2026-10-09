@@ -51,15 +51,25 @@ find_es() {
 # has -DHAVE_INTL, so _(x) is glibc gettext, and startup only ever calls
 # EsLocale::init("", ...) (es-app/src/main.cpp:345-348) - nothing hands the "Language"
 # value the menu saves into es_settings.cfg to setenv/setlocale.  So the launcher does.
-# Measured on the board 2026-10-09 with the real zh_CN catalog installed, through the
-# same glibc gettext ES calls:
-#   LANG=C.UTF-8 LANGUAGE=zh_CN          -> gettext("SETTINGS") = "SETTINGS"
-#   LANG=C.UTF-8 LC_MESSAGES=zh_CN.UTF-8 -> gettext("SETTINGS") = "设置"
-# LANGUAGE is ignored while the locale is in the C family, and this rootfs ships no
-# generated locales (`locale -a` = C, C.utf8, POSIX), which is why
-# packages/ui/emulationstation/package.mk generates ES_LOCALES_TO_GENERATE.  Only
-# LC_MESSAGES is exported: LC_CTYPE stays C.UTF-8, so nothing else on the box changes
-# its idea of what a character is.
+#
+# Two things have to be true, and they are independent (both measured on the board
+# 2026-10-09 with a probe linked against the same glibc gettext ES uses):
+#
+#   1) a NON-C-family locale must be resolvable, because LANGUAGE is ignored while the
+#      effective locale is in the C family:
+#        LC_ALL=C.UTF-8 LANGUAGE=fr_FR                      -> "SETTINGS"
+#        LANG=fr_FR.UTF-8 LANGUAGE=fr_FR (no such locale)   -> "SETTINGS"
+#   2) the catalog, not the locale, decides the language.  One generated locale carries
+#      every language, because glibc walks LANGUAGE and truncates the region:
+#        LC_MESSAGES=zh_CN.UTF-8 LANGUAGE=fr_FR  -> "PARAMÈTRES"   (fr, not zh!)
+#        LC_MESSAGES=zh_CN.UTF-8 LANGUAGE=zh_CN  -> "设置"
+#      (fr_FR has no directory of its own; gettext falls back to fr.)
+#
+# So this picks any usable "carrier" locale out of /usr/lib/locale and lets LANGUAGE
+# choose the catalog.  Generating one locale per language would have cost ~3.1 MB x 35
+# for nothing; see ES_LOCALES_TO_GENERATE in packages/ui/emulationstation/package.mk.
+# Only LC_MESSAGES is exported, so LC_CTYPE stays C.UTF-8 and nothing else on the box
+# changes its idea of what a character is.
 apply_language() {
     lang=$(sed -n 's#.*<string name="Language" value="\([^"]*\)".*#\1#p' \
         "${HOME:-/root}/.emulationstation/es_settings.cfg" 2>/dev/null | head -1)
@@ -69,15 +79,40 @@ apply_language() {
             return 0
             ;;
     esac
-    if [ -f "/usr/lib/locale/${lang}.UTF-8/LC_MESSAGES/SYS_LC_MESSAGES" ]; then
-        LC_MESSAGES="${lang}.UTF-8" LANGUAGE="$lang"
-        export LC_MESSAGES LANGUAGE
-        echo "  language: ${lang} -> LC_MESSAGES=${lang}.UTF-8"
-    else
-        echo "  !! language ${lang} has no generated locale (/usr/lib/locale/${lang}.UTF-8),"
-        echo "     so ES stays English; add it to ES_LOCALES_TO_GENERATE in"
-        echo "     packages/ui/emulationstation/package.mk and rebuild the image"
+
+    # which language will actually be found?  the exact code, else the region-stripped
+    # one - matching what glibc gettext itself does, so the warning below is truthful.
+    base=${lang%%_*}
+    found=""
+    for c in "$lang" "$base"; do
+        [ -f "/usr/share/locale/${c}/LC_MESSAGES/emulationstation2.mo" ] && { found="$c"; break; }
+    done
+    if [ -z "$found" ]; then
+        echo "  !! no catalog for ${lang} under /usr/share/locale - ES stays English"
+        return 0
     fi
+
+    carrier=""
+    for d in /usr/lib/locale/*; do
+        [ -f "${d}/LC_MESSAGES/SYS_LC_MESSAGES" ] || continue
+        name=$(basename "$d")
+        # C and POSIX (and C.utf8) are C-family: LANGUAGE stays ignored with them
+        case "$name" in
+            C|C.*|POSIX) continue ;;
+        esac
+        carrier="$name"
+        break
+    done
+    if [ -z "$carrier" ]; then
+        echo "  !! no non-C locale in /usr/lib/locale, so LANGUAGE would be ignored"
+        echo "     and ES would stay English whatever the menu says."
+        echo "     Generate one: localedef -i <lang> -f UTF-8 /usr/lib/locale/<lang>.UTF-8"
+        return 0
+    fi
+
+    LC_MESSAGES="$carrier" LANGUAGE="$lang"
+    export LC_MESSAGES LANGUAGE
+    echo "  language: ${lang} (catalog ${found}) via carrier LC_MESSAGES=${carrier}"
 }
 
 stall() { journalctl -b -k --no-pager 2>/dev/null | grep -cE 'vblank wait timed out|wait_for_vblanks|flip_done timed out'; }

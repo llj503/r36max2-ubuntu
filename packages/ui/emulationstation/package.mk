@@ -105,6 +105,19 @@ post_patch() {
   grep -q 'r36max2: every probe above matches on the device NAME' \
     ${PKG_BUILD}/es-core/src/utils/Platform.cpp ||
     die "emulationstation: the battery patch did not apply - ES would show 0% with a charged battery"
+
+  # 0102: saving the settings menu aborted ES (rc=134) on this board, which is why a
+  # language change never reached the file.  The GPU-governor save func calls
+  # getSelected() unconditionally; that list is empty here because ES enumerates the
+  # governors through /etc/profile.d/099-freqfunctions, a ROCKNIX-only helper this
+  # rootfs has never had.  Located from a backtrace captured on the device by
+  # interposing __cxa_throw, not by reading:
+  #   GuiSettings.cpp:101 (save pass) -> GuiMenu.cpp:2139 -> vector<string>::at(0)
+  # (the CPU-governor list above it is safe only because GuiMenu.cpp:2101-2102
+  # appends a fallback entry; selectFirstItem() cannot select from nothing.)
+  grep -q 'r36max2: getAvailableGpuGovernors() enumerates through' \
+    ${PKG_BUILD}/es-app/src/guis/GuiMenu.cpp ||
+    die "emulationstation: the gpu-governor guard did not apply - saving the settings menu would abort ES"
 }
 
 makeinstall_target() {

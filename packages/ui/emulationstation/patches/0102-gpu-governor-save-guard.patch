@@ -1,0 +1,27 @@
+--- a/es-app/src/guis/GuiMenu.cpp	2026-10-09 14:14:12.488754211 +0800
++++ b/es-app/src/guis/GuiMenu.cpp	2026-10-09 14:14:12.539078119 +0800
+@@ -2133,7 +2133,23 @@
+ 	s->addWithLabel(_("DEFAULT GPU SCALING GOVERNOR"), optionsGpuGovernors);
+ 	s->addSaveFunc([selectedGpuGovernor, optionsGpuGovernors]
+ 	{
+-		if (optionsGpuGovernors->changed()) {
++		// r36max2: getAvailableGpuGovernors() enumerates through
++		// /etc/profile.d/099-freqfunctions, a ROCKNIX-only helper that a plain Ubuntu
++		// rootfs does not have, so on this board the list comes back EMPTY.  The CPU
++		// governor list above is safe only because it appends a fallback entry
++		// (GuiMenu.cpp:2101-2102); here line 2130 calls selectFirstItem(), which
++		// cannot select from nothing (it checks mEntries.size() > 0), so nothing ends
++		// up selected.  The runSystemCommand below then calls getSelected()
++		// UNCONDITIONALLY - outside the if(changed()) - and getSelected() is
++		// getSelectedObjects().at(0) on an empty vector: std::out_of_range -> TRYCATCH
++		// rethrow -> terminate -> SIGABRT.  Measured 2026-10-09 by interposing
++		// __cxa_throw on the device:
++		//   main.cpp:782 -> InputManager.cpp:879 -> Window.cpp:288
++		//   -> GuiSettings.cpp:101 (the save pass) -> this lambda (GuiMenu.cpp:2139)
++		// Bail out when there is nothing to apply.
++		if (optionsGpuGovernors->getSelectedObjects().empty())
++			return;
++
+ 			SystemConf::getInstance()->set("system.gpuperf", optionsGpuGovernors->getSelected());
+ 		}
+ 		Utils::Platform::runSystemCommand("/usr/bin/sh -lc \". /etc/profile.d/099-freqfunctions; gpu_performance_level "+ optionsGpuGovernors->getSelected() + "\"", "", nullptr);
