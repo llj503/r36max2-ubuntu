@@ -549,6 +549,21 @@ SUDO ls "${MNT}/root/usr/local/bin/r36-play" >/dev/null 2>&1 \
   || { v "  !! r36-play missing - ES cannot pass -emulator/-core to retroarch"; fail=1; }
 v "  ES present: binary, launcher, and both cfgs with the verified GUID + stick axes"
 
+# A package can be rebuilt and still ship the OLD copy: `make image` only re-runs
+# INSTALL for packages it thinks changed, and ${BUILD}/image/system is merged into,
+# never wiped.  Both halves of the language work are worth catching this way - the
+# relaunch loop lives only in the launcher text (so grep sees it), while the ES fixes
+# are in a stripped ELF (so compare bytes against what install_pkg produced).
+for probe in 'unset LC_MESSAGES LANGUAGE' 'language changed ('; do
+  SUDO grep -qF "${probe}" "${MNT}/root/usr/local/bin/r36-es" 2>/dev/null \
+    || { v "  !! /usr/local/bin/r36-es in the image has no '${probe}' - a stale es-launcher copy"; fail=1; }
+done
+img_es=$(SUDO sha256sum "${MNT}/root/usr/local/bin/emulationstation" 2>/dev/null | cut -d' ' -f1)
+pkg_es=$(sha256sum ${BUILD}/install_pkg/emulationstation-*/usr/local/bin/emulationstation 2>/dev/null | head -1 | cut -d' ' -f1)
+v "  ES binary: image=${img_es:0:16} install_pkg=${pkg_es:0:16}"
+[ -n "${img_es}" ] && [ "${img_es}" = "${pkg_es}" ] \
+  || { v "  !! the image did not pick up the emulationstation package's current install"; fail=1; }
+
 # 4. one kernel tree.  A second /lib/modules directory is how a .ko that nothing loads
 #    ends up on a card.
 trees=$(SUDO ls "${MNT}/root/lib/modules" 2>/dev/null | tr '\n' ' ')
