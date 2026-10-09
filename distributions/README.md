@@ -30,14 +30,25 @@
 | `r36max2-ubuntu-v18.img.xz` | `da2a12b30a0bbe4b6a1bc6f48d00f41b8e61ab57f98cf9e690482aade0c71510` |
 | `r36max2-ubuntu-v19.img.xz` | `ea1aa41ea33d56b467d2100c333baf8d6c0f55c7cd00b99b63e56a8d018cb282` |
 | `r36max2-ubuntu-v20.img.xz` | `da46854618144d70b49d47cf54ad7aa81bbf59922636e2670c4cbb2e2f66a143` |
-| `r36max2-ubuntu-v21.img.xz` | `89eb472e84890cc15117bec90e72ffd063428a2ddb8589e068ec690cf39e1eb5` |
+| `r36max2-ubuntu-v21.img.xz` | `7d5cc138d1aad7b992ba21062f08d877e46453bd054b11f9d5174a29b3362078` |
 | `r36max2-ubuntu-26.04.img.xz` | `c0df67ce40f27392d8a9d94a6016754f747a0dd87a3be2e499362bf0d699b64a` |
 | `r36max2-ubuntu-alt-arkosblobs.img.xz` | `360ac81678b1344302844d2e89fea541033692c02577de8a15fb65ad12e968d8` |
 
-**v21 这条哈希（`89eb472e`，2026-10-09）记的是"当前这棵树产出的镜像"，它还没被刷进卡里做
-首启验证**。手上那张卡跑的是同一版 v21 镜像 + 当场手工应用的 i18n 与电量修复（二进制
-sha `4b6e030c`，替换下来的原件备份在卡上 `/root/emulationstation.pre-battery`）。刷过并
-开机验证过之后再来对这一行。
+**v21 这条哈希（`7d5cc138`，2026-10-09，839669512 B）记的是"当前这棵树产出的镜像"，
+它还没被刷进卡里做首启验证**。里面比上一版多了四样，都是当天实测出来的修复：ES 按
+`type=` 而不是名字找电池、GPU governor 保存函数不再对空列表调 `getSelected()`
+（那个 `rc=134` abort 就是它，也是"改语言存不下去"的直接原因）、35 个 gettext catalog
+加一个非 C 载体 locale、以及启动器先清空 `LC_MESSAGES/LANGUAGE` 再决定语言并在
+`Language` 真的变化时重开 ES。
+
+手上那张卡跑的是同一版 v21 镜像 + 当场手工应用的这些修复（ES 二进制 sha `b6b968cd`，
+旧的二进制备份在卡上 `/root/emulationstation.pre-{battery,guard}`）。刷过并开机验证过
+之后再来对这一行。
+
+**镜像内容只由配方决定，`scripts/image` 里那些自检不改一个字节**，所以加断言不需要重打；
+这一版是带着断言之前打的，但断言对着它实际跑过一遍（只读挂载那张 .img：launcher 两处标记
+齐全、镜像里的 ES 与 `install_pkg` 逐字节相同 `b6b968cd`、catalog 35、载体 locale 在），
+全绿。
 
 校验：把镜像和本目录的 `.sha256` 放同一目录后
 
