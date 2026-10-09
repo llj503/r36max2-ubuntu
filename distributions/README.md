@@ -30,9 +30,14 @@
 | `r36max2-ubuntu-v18.img.xz` | `da2a12b30a0bbe4b6a1bc6f48d00f41b8e61ab57f98cf9e690482aade0c71510` |
 | `r36max2-ubuntu-v19.img.xz` | `ea1aa41ea33d56b467d2100c333baf8d6c0f55c7cd00b99b63e56a8d018cb282` |
 | `r36max2-ubuntu-v20.img.xz` | `da46854618144d70b49d47cf54ad7aa81bbf59922636e2670c4cbb2e2f66a143` |
-| `r36max2-ubuntu-v21.img.xz` | `a85969a712db1ae5b66dbda687914688aba9fdc55f34730b2695d847d29a1c0e` |
+| `r36max2-ubuntu-v21.img.xz` | `89eb472e84890cc15117bec90e72ffd063428a2ddb8589e068ec690cf39e1eb5` |
 | `r36max2-ubuntu-26.04.img.xz` | `c0df67ce40f27392d8a9d94a6016754f747a0dd87a3be2e499362bf0d699b64a` |
 | `r36max2-ubuntu-alt-arkosblobs.img.xz` | `360ac81678b1344302844d2e89fea541033692c02577de8a15fb65ad12e968d8` |
+
+**v21 这条哈希（`89eb472e`，2026-10-09）记的是"当前这棵树产出的镜像"，它还没被刷进卡里做
+首启验证**。手上那张卡跑的是同一版 v21 镜像 + 当场手工应用的 i18n 与电量修复（二进制
+sha `4b6e030c`，替换下来的原件备份在卡上 `/root/emulationstation.pre-battery`）。刷过并
+开机验证过之后再来对这一行。
 
 校验：把镜像和本目录的 `.sha256` 放同一目录后
 

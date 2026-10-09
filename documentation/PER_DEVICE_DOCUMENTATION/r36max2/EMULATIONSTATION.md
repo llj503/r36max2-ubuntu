@@ -192,3 +192,49 @@ ES 退出后把桥恢复回去。
 `--exit-on-reboot-required` 才会真的退出（`ExitOnRebootRequired` 默认 false，
 `Settings.cpp:144`），本仓库没传这个参数，所以只弹"需要重启"的提示。
 
+
+# 电量显示 0%：ES 按**名字**找电池，而这块板子叫 `rk817-battery`（2026-10-09 实测）
+
+现象：进 ES 后电池图标显示 0%，但机器明显有电。**原因和之前 `r36-status-screen` 那个
+`batt: ?%` 是同一个坑的第二次出现**——主线内核把这路 fuel gauge 注册成 `rk817-battery`，
+没有通用的 `battery` 别名。
+
+`es-core/src/utils/Platform.cpp:430-448` 的 `queryBatteryInformation()` 是**按设备名的子串**
+挑电池的：`"/bat"`（注意带前导斜杠，所以只有 legacy 的 `.../power_supply/battery` 能命中）、
+`qcom-battery`、`qcom-battmgr-bat`、`fuel`、`charger`。板上实测：
+
+```
+rk817-battery   type=Battery  status=Full  capacity=100  charge_now=2867000  current_avg=7224
+rk817-charger   type=USB      online=1     （没有 status 文件）
+```
+
+`rk817-battery` 里是 `-battery` 不是 `/bat`，**一条都不匹配**。失败的方式很讲究，正好凑出
+"0% 而不是'没电池'"：`batteryRootPath` 留空 → `batteryCapacityPath` 从未被赋值（还是空串）→
+进了 fuel-gauge 分支，可 `batteryCurrChargePath` / `batteryMaxChargePath` 也都是空串，那个
+`if` 直接把整段计算跳过 → `ret.level` 保持结构体默认值 **0**（`Platform.h:58`）。
+而 `hasBattery` 仍然是 `true`，因为 `"charger"` 确实命中了 `rk817-charger`。于是屏幕上是一个
+**画出来了、读数 0%** 的电池，而不是"没有电池"。
+
+修法：名字全部落空之后，改为读每个设备自己的 `type` 文件、取内容等于 `Battery` 的那个——
+和 `r36-status-screen` 在这块板子上已经验证过的做法一致。补丁在
+`packages/ui/emulationstation/patches/0101-r36max2-battery-match-by-type-not-name.patch`，
+由 `scripts/unpack` 自己的 `${PKG_DIR}/patches/*.patch` 机制应用（构建日志里是
+`APPLY PATCH (common)`）。
+
+**这个 bug 的验证方式值得记下来**，因为它原来完全静默：修复前那段分支根本不执行，
+所以不产生任何日志，"日志干净"不能证明任何东西。要拿证据就得把它变成一个可观测信号——
+用一个空文件 bind 覆盖 `capacity`，逼修复后的代码路径必须去读那个确切路径：
+
+| 步骤 | 结果 |
+| --- | --- |
+| A 基线（capacity 正常可读 = 100） | ES 日志 **0 行**，`Error reading/opening` 0 条 |
+| B `mount --bind /tmp/emptycap …/rk817-battery/capacity` | 日志 30 行，**19 次** `Error reading: /sys/class/power_supply/rk817-battery/capacity` |
+| C `umount` 撤销 | 日志回到 **0 行**，`stray mounts over sysfs: 0`，capacity 恢复 100 |
+
+B 是决定性的：只有修复后的代码才会以那个路径打开容量文件（修复前 `batteryCapacityPath`
+是空串，这行日志不可能出现）。测试脚本 `F:\r36-build\batt-proof.sh`，属临时挂载，C 步已撤销。
+
+顺带记一个框架缺陷（已防护）：`scripts/unpack` 应用 `patches/*.patch` 时**不检查 `patch`
+的返回码**，而 `scripts/build` 的 `BUILD_CLEANUP_INSTALL` 随后会删掉失败时留下的 `*.rej`。
+也就是说上游一挪代码、补丁静默失效，构建照样绿。所以 `post_patch()` 里 grep 了插入内容
+的标记串，打不上就 `die`。

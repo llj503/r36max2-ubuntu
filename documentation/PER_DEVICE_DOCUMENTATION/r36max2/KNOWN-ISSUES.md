@@ -46,6 +46,11 @@
   根本不存在通用的 `battery` 别名**（实测该目录只有 `rk817-battery` 与 `rk817-charger`），
   所以路径解析为空、页面打 `?%`，而同一时刻 `capacity` 读出来是 99。现在按 `type` 找
   Battery 那一类再读 `capacity`，实测状态页显示 `batt:100%`。
+  **同一个坑 2026-10-09 在 ES 上又踩了一次**：`Platform.cpp` 也是按名字子串找电池
+  （`"/bat"` 带斜杠，只能命中 legacy 的 `.../battery`），`rk817-battery` 一条都不匹配，
+  于是界面画出一个 0% 的电池图标。已用同样的 `type=` 判定修好，补丁与被 bind-mount
+  逼出来的验证证据见 [EMULATIONSTATION.md](EMULATIONSTATION.md)。**教训：凡是读电量的
+  地方都必须按 `type` 找，不能猜名字**——这条线已经花了两个回合。
 - **`systemctl is-enabled` 对**所有** r36 单元报 `disabled`，但它们其实开机就跑了** —— 这是个
   诊断陷阱，已经骗过两次。`config/functions` 的 `enable_service` 把 `*.wants/` 软链写进
   `/usr/lib/systemd/system/`（ROCKNIX 的习惯），而 Ubuntu 自己的单元（`ssh`、
