@@ -81,19 +81,23 @@ ES 的 <command> = /usr/local/bin/r36-play %ROM%
 
 | 系统 | 核 | 游戏 | 标称 | 实测持续 | 结论 |
 | --- | --- | --- | --- | --- | --- |
-| nes | fceumm | 宝石方块.zip | 60.10 | **59.84 fps** | 满速 |
-| snes | snes9x2010 | 超级马里奥医生.zip | 60.096 | **60.47 fps** | 满速 |
-| gb | gambatte | 打砖块.zip | 59.73 | **59.34 fps** | 满速 |
-| gbc | gambatte | 骰子方块.zip | 59.73 | **59.45 fps** | 满速 |
-| gba | mgba | 数独.zip | 59.73 | **60.18 fps** | 满速 |
-| gba | vba_next | 数独.zip | 59.73 | **61.03 fps** | 满速 |
-| psx | pcsx_rearmed | 大航海时代外传[简].PBP | 59.82 | **60.06 fps** | 满速 |
-| dreamcast | flycast | 月华剑士2 汉化版.cdi | 60 | **59.05 fps** | 基本满速 |
+| nes | fceumm | 宝石方块.zip | 60.10 | **59.82 fps** | 满速 |
+| snes | snes9x2010 | 超级马里奥医生.zip | 60.096 | **60.31 fps** | 满速 |
+| gb | gambatte | 打砖块.zip | 59.73 | **59.89 fps** | 满速 |
+| gbc | gambatte | 骰子方块.zip | 59.73 | **60.60 fps** | 满速 |
+| gba | mgba | 数独.zip | 59.73 | **60.00 fps** | 满速 |
+| gba | vba_next | 数独.zip | 59.73 | **62.13 fps** | 满速 |
+| psx | pcsx_rearmed | 大航海时代外传[简].PBP | 59.82 | **59.94 fps** | 满速 |
+| dreamcast | flycast | 月华剑士2 汉化版.cdi | 60 | **58.85 fps** | 基本满速 |
 | dreamcast | flycast | Capcom vs SNK 2.chd | 60 | **55.48 fps** | 92%，个别场面掉帧 |
-| saturn | mednafen_saturn | 棉花小魔女 日版.chd | 60 | **14.22 fps** | 不可玩 |
+| saturn | mednafen_saturn | 棉花小魔女 日版.chd | 60 | **14.13 fps** | 不可玩 |
 | saturn | mednafen_saturn | 大航海时代2[简].chd | 60 | **15.41 fps** | 不可玩 |
 
-十一次启动全部 `rc=0`、`errors=0`、`Initialized PLAYBACK device` 至少一次。DC 的日志里有真正的
+这张表是**从刷好的镜像启动的那张卡**上量的（2026-10-09）。前一天在手工部署的同款文件上也量过
+一遍，逐项差都在噪声内（nes 59.84/59.82、dreamcast 59.05/58.85、saturn 14.22/14.13），
+所以核的表现与"文件是拷进去的还是装进去的"无关。
+
+两轮共 20 次启动全部 `rc=0`、`errors=0`、`Initialized PLAYBACK device` 至少一次。DC 的日志里有真正的
 启动信息（`[BOOT]: Product number: T1249M`），Saturn 认出了盘（`Game ID is: T-9906G`、
 `This is a Saturn disc`、`Disc Region: "Japan"`）。
 
@@ -101,15 +105,15 @@ ES 的 <command> = /usr/local/bin/r36-play %ROM%
 静默什么都不产出）让 RetroArch 用自己的读回路径出图 —— 这条路上 `--verbose` 拿不到的画面证据
 终于有了，而且和"抓 `/dev/fb0` 抓不到 ES"不冲突（见 [EMULATIONSTATION.md](EMULATIONSTATION.md)）：
 
-![Dreamcast：flycast 跑月华剑士2，量到的是真 SEGA 授权画面](images/dreamcast-flycast-boot.png)
-![Saturn：satune 跑棉花小魔女，同样 boot 到了 SEGA 画面，只是只有 14 fps](images/saturn-satune-boot.png)
+![Dreamcast：flycast 跑月华剑士2 汉化版，第 900 帧——SEGA 授权画面加上汉化组水印都在](images/dreamcast-flycast-boot.png)
+![Saturn：satune 跑棉花小魔女，第 600 帧 boot 到 SEGA 授权画面，只是只有 14 fps](images/saturn-satune-boot.png)
 ![PlayStation：pcsx_rearmed 跑大航海时代外传 PBP，KOEI 开场](images/psx-pcsx-rearmed-boot.png)
 
-**一个只在脚本里才会踩到的点**：flycast **不响应 SIGTERM**，所以 `timeout 45 r36-play <dc 游戏>`
-会一直挂着（实测 `rc=137`，必须 `-k` 才收得掉）。RetroArch 自己的退出路径没这个问题 ——
-`--max-frames` 和菜单里的 Quit 都是干净退出（DC 那 11 次 `--max-frames` 全部 `rc=0`）。
-也就是说这是**测量脚本**的坑，不是用户按退出会遇到的坑；但任何"跑 N 秒然后杀"的做法都必须
-`timeout -k`。
+**一个只在脚本里才会踩到的点**：flycast 对 **SIGTERM 的响应不可靠** —— 同一张卡、同一个游戏，
+2026-10-08 那次 `timeout -k 5 12 r36-play <dc 游戏>` 是 `rc=137`（TERM 没生效，靠 KILL 收掉），
+第二天同一行命令是 `rc=124`（正常退出）。所以任何"跑 N 秒然后杀"的写法**必须带 `-k`**，
+不能假设 TERM 够用。RetroArch 自己的退出路径没这个问题：`--max-frames` 每次都 `rc=0` 干净退出，
+菜单里的 Quit 走的是同一条路。也就是说这是**测量脚本**的坑，不是玩家按退出会遇到的坑。
 
 也就是说：**"能不能加载"这一层全过了；DC 在这台机器上是真能玩的；Saturn 差的是速度，
 而速度是这颗 SoC 与这个核（satune 没有 ARM dynarec）的上限，不是配置的疏漏。**
