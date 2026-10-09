@@ -136,3 +136,59 @@ ES 退出后把桥恢复回去。
 `systemctl start r36-keymapper`，而该单元带 `BindsTo=weston.service` —— 于是 `--kmsdrm` 一退出
 就会把 weston 一起拽起来，恰好是这条路径刻意要躲的东西。现在只在"ES 启动前桥本来就在跑"
 （`BRIDGE_WAS=active`）时才恢复，`watch_bridge()` 那个后台守卫同样加了这层判断。
+
+---
+
+# 界面语言：为什么"选简体中文没反应"（2026-10-09 实测）
+
+用户在设置菜单里选"简体中文"，界面毫无变化。查下来是**三个独立的洞叠在一起**，每一个都
+足够让翻译失效，而且都不报错：
+
+1. **卡上一个 catalog 都没有。** `find / -xdev -name emulationstation2.mo` = 0。这个 build 带
+   `-DHAVE_INTL`（`CMakeLists.txt:558-560`，`es-core.dir/flags.make` 的 `CXX_DEFINES` 里能看到），
+   所以 `_(x)` 就是 glibc gettext（`es-core/src/LocaleES.h`）；Linux 分支里**没有**自带的 .po
+   解析器 —— 那套 `mItems` / `checkLocalisationLoaded` 在 `LocaleES.cpp:88` 之后的 `#else`
+   （WIN32）分支里。上游的安装规则是 `share/locale/<lang>/LC_MESSAGES`
+   （`locale/CMakeLists.txt:33`），而本仓库的 `makeinstall_target` 从不跑 `make install`。
+2. **设置项根本没被用上。** `main.cpp:345-348` 只调用 `EsLocale::init("", "/usr/share/locale")`
+   —— locale 传空串；全树 grep `EsLocale::init` 的调用者只有这一处，没有任何代码把保存下来的
+   `Language` 交给 `setenv`/`setlocale`。菜单里的"简体中文"确实存在
+   （`GuiMenu.cpp:1545`），保存也确实生效（`SystemConf::set("system.language")` 在无
+   batocera.conf 时映射成 es_settings.cfg 的 `Language`，`SystemConf.cpp:18-19`），但
+   **界面语言只由环境变量决定**。
+3. **glibc 在 C 系 locale 下无视 LANGUAGE。** 这个 rootfs `locale -a` 只有 `C / C.utf8 / POSIX`，
+   也没有 `/usr/share/i18n` 数据（`localedef -i zh_CN -f UTF-8` 报
+   `character map file 'UTF-8' not found`）。用板上同一个 glibc gettext（python3 的
+   `locale.gettext` 走的就是 C 库）配合真实的 zh_CN catalog 实测：
+
+| 环境 | `gettext("SETTINGS")` |
+| --- | --- |
+| `LANG=C.UTF-8 LANGUAGE=zh_CN` | `SETTINGS`（英文，被忽略） |
+| `LC_ALL=C LANGUAGE=zh_CN` | `SETTINGS`（英文，被忽略） |
+| `LANG=C.UTF-8 LC_MESSAGES=zh_CN.UTF-8` | **`设置`** |
+
+也就是说：**必须有生成好的 locale**，只把 `LANGUAGE` 塞进环境是没用的。
+
+## 修法（三处，全部实测）
+
+* `packages/ui/emulationstation/package.mk`：把 i18n target 编出来的 35 个
+  `emulationstation2.mo`（在**源码树** `locale/lang/<lang>/LC_MESSAGES/`，不在 cmake 目录里）
+  装进 `/usr/share/locale/<lang>/LC_MESSAGES/`；再用**宿主**的 `localedef` 生成
+  `ES_LOCALES_TO_GENERATE`（默认只有 `zh_CN`，每个约 3.1 MB）。宿主 glibc 2.39 生成的 locale
+  在板上 glibc 2.43 能直接用（实测：`locale -a` 列出 `zh_CN.UTF-8`，gettext 返回中文）。
+  catalog 数为 0 时 `die`，避免"宿主少了 msgfmt 就静默出英文镜像"。
+* `es_settings.cfg` 默认带上 `<string name="Language" value="zh_CN" />` —— 就是用户在菜单里
+  选中文时 ES 自己会写的那一行，所以之后用户改语言不会被这个默认值覆盖。
+* `r36-es` 新增 `apply_language()`：读 es_settings.cfg 的 `Language`，导出
+  `LC_MESSAGES=<lang>.UTF-8` 和 `LANGUAGE=<lang>`。**只设 LC_MESSAGES**，不动 LANG/LC_ALL，
+  于是 `LC_CTYPE` 保持 `C.UTF-8`，系统其余部分对字符的判断不变。locale 没生成时打印一行
+  说明并退回英文，不静默。
+
+汉字字形不用额外操心：`Font.cpp:278-285` 的 fallback 列表第一个就是
+`:/DroidSansFallbackFull.ttf`（`resources/` 里有），中日文都落到它上面。
+
+两个使用上的事实：**换语言要重启 ES 才生效**（gettext 的 locale 在启动时就定了，菜单里选完
+不会当场变）；`GuiMenu.cpp:1557` 在 `HAVE_INTL` 下会置 `exitreboot`，但只有
+`--exit-on-reboot-required` 才会真的退出（`ExitOnRebootRequired` 默认 false，
+`Settings.cpp:144`），本仓库没传这个参数，所以只弹"需要重启"的提示。
+

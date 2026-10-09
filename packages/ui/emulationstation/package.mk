@@ -23,8 +23,8 @@ PKG_SHA256="c92eb0fd6e1e2b5fa603391f6c0b540d4fad858664c23321237df32efecf68ad"
 PKG_LICENSE="GPL-2.0"
 PKG_SITE="https://github.com/ROCKNIX/emulationstation-next"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
-# the theme is not a build input and is not shipped in v21 (decision 2026-10-04), so it
-# is not a dependency here either - see packages/virtual/image/package.mk
+# the theme is a runtime asset, not a build input; it is shipped by its own recipe
+# (packages/ui/es-theme-art-book-next) and pulled in by packages/virtual/image
 PKG_DEPENDS_TARGET="toolchain rootfs-apt"
 PKG_LONGDESC="EmulationStation front end (emulationstation-next, GLES3), cross-built."
 PKG_TOOLCHAIN="cmake-make"
@@ -41,6 +41,13 @@ PKG_CMAKE_OPTS_TARGET="-DGLES3=1 \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_RULE_MESSAGES=OFF \
   -DCMAKE_VERBOSE_MAKEFILE=OFF"
+
+# locales to generate into /usr/lib/locale, one per UI language the device is meant
+# to be able to run in.  The menu offers 35 languages and every catalog ships, but
+# a language only actually translates if its locale exists here too (see
+# makeinstall_target); each is ~3.1 MB.  Codes are the values GuiMenu.cpp:1511-1546
+# writes into the "Language" setting.
+ES_LOCALES_TO_GENERATE="zh_CN"
 
 post_unpack() {
   # A GitHub archive carries no submodule content: external/pugixml unpacks as an
@@ -89,8 +96,51 @@ makeinstall_target() {
   # :/ubuntu_condensed.ttf", plus ":/help/button_a.svg missing".  Copying the same
   # 14 MB tree to /usr/local/bin/resources on that board and rerunning left a 5-line
   # log with zero font and zero help-icon errors, so this is the fix, not a guess.
-  # Nothing else in the tree provides it: the theme package is not shipped in v21.
   [ -d "${PKG_BUILD}/resources" ] ||
     die "emulationstation: no resources/ in the source tree - ES would start with no fonts"
   cp -a "${PKG_BUILD}/resources" ${INSTALL}/usr/local/bin/resources
+
+  # --- translations -----------------------------------------------------------
+  # This build has -DHAVE_INTL (CMakeLists.txt:558-560 found msgfmt/msgmerge/
+  # xgettext + Intl in the sysroot), so _(x) is plain glibc gettext and the ONLY
+  # thing that can translate the UI is a catalog on disk: main.cpp:348 binds the
+  # "emulationstation2" domain to /usr/share/locale (./locale/lang wins, but the
+  # service runs with cwd=/).  Upstream's install rule puts the catalogs in
+  # share/locale/<lang>/LC_MESSAGES (locale/CMakeLists.txt:33) and this recipe
+  # never runs `make install`, so without the copy below the card had exactly
+  # zero emulationstation2.mo files: the LANGUAGE menu row saves zh_CN and the
+  # UI stays English, which is what "cannot switch to Simplified Chinese" was.
+  # The .mo are built by the i18n target into the SOURCE tree, not the cmake dir.
+  local CAT_SRC="${PKG_BUILD}/locale/lang"
+  local cats=0 mo lang
+  for mo in "${CAT_SRC}"/*/LC_MESSAGES/emulationstation2.mo; do
+    [ -f "${mo}" ] || continue
+    lang=$(basename "$(dirname "$(dirname "${mo}")")")
+    mkdir -p "${INSTALL}/usr/share/locale/${lang}/LC_MESSAGES"
+    cp -f "${mo}" "${INSTALL}/usr/share/locale/${lang}/LC_MESSAGES/emulationstation2.mo"
+    cats=$((cats + 1))
+  done
+  [ "${cats}" -gt 0 ] ||
+    die "emulationstation: no compiled catalogs under ${CAT_SRC} - the host needs msgfmt, msgmerge and xgettext or HAVE_INTL is off and nothing can ever be translated"
+
+  # A catalog alone is not enough.  glibc gettext ignores LANGUAGE while the
+  # effective locale is in the C family, and this rootfs ships no generated
+  # locales at all (`locale -a` on the card = C, C.utf8, POSIX; there is no
+  # /usr/share/i18n data to make one).  Measured on the board 2026-10-09 with the
+  # real zh_CN catalog in place, through the same glibc gettext ES calls:
+  #   LANG=C.UTF-8 LANGUAGE=zh_CN            -> "SETTINGS"   (ignored)
+  #   LANG=C.UTF-8 LC_MESSAGES=zh_CN.UTF-8   -> "设置"        (works)
+  # So the locale has to exist; r36-es then points LC_MESSAGES at it.  Generated
+  # with the HOST localedef from the host's i18n data: the result is plain data
+  # and a 2.39-generated zh_CN.UTF-8 loads on the card's glibc 2.43 (measured:
+  # `locale -a` lists it and gettext returns the translation).  Each language
+  # costs ~3.1 MB, which is why this is a list and not "all 35".
+  # localedef prints errors but still exits 0, so success is the output dir.
+  for lang in ${ES_LOCALES_TO_GENERATE}; do
+    mkdir -p "${INSTALL}/usr/lib/locale"
+    localedef -i "${lang}" -f UTF-8 "${INSTALL}/usr/lib/locale/${lang}.UTF-8" ||
+      die "emulationstation: localedef failed for ${lang}"
+    [ -f "${INSTALL}/usr/lib/locale/${lang}.UTF-8/LC_MESSAGES/SYS_LC_MESSAGES" ] ||
+      die "emulationstation: localedef produced no ${lang}.UTF-8 - is /usr/share/i18n present on the build host?"
+  done
 }

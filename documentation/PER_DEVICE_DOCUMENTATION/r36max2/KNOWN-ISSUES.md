@@ -134,5 +134,20 @@
   recipe 与核都留在树里（`packages/libretro/libretro-parallel-n64`），修好插件选择就把
   `es_systems.cfg` 里那段注释恢复即可。
   **注意**：不要用"全局改成要桌面 GL 上下文"去修——那会牵动另外 8 个已经正常的核。
+- **进 ES 设置菜单时 ES 会 abort（rc=134），2026-10-09 实测两次，未定位**：journal 里两次
+  （11:44:38 与 11:45:07）都是同一串
+  `ERROR GuiComponent::input Exception vector::_M_range_check: __n (which is 0) >= this->size() (which is 0)`
+  → `terminate called after throwing an instance of 'std::exception'` → `status=134`。
+  这就是"进设置换语言"当时没生效的直接原因：`es_settings.cfg` 只在设置**改动之后**才写盘，
+  进程在写之前就死了。每次 abort 前还都有两行 `sh: 1: /usr/bin/rocknix-keyboard: not found`
+  （ROCKNIX 的键盘布局工具，本镜像没有），但读代码已经**排除**它是原因：
+  `GuiMenu.cpp:1583-1585` 无论工具在不在都会补一个 `curLayout` 兜底项，`populateVariants`
+  也总会加 `NONE`，两个 `OptionListComponent` 不会是空的。
+  剩下两个候选都还没证伪：`OptionListComponent::getSelected()` 直接 `at(0)`，而 Release 构建里
+  `assert` 被编译掉了；以及 `reloadGuiMenu`（`GuiMenu.cpp:3070-3076`）的
+  `delete pthis; window->pushGui(new GuiMenu(window, false))`。
+  板子上装不了 gdb（见上面 apt 快照那条），但 ES 二进制**没 strip 且带 `debug_info`**，
+  所以下一步是 `LimitCORE=infinity` + 改 `core_pattern` 拿一份 core，在构建机上用
+  `gdb-multiarch` 读栈——比继续猜快。
 - 1 GB RAM：没上 zram/swap，编译大项目要省着点。
 

@@ -34,12 +34,20 @@ makeinstall_target() {
   # is actually changed, so nothing here could be copied from a working device.
   # ES rewrites this file on the first user change and keeps ThemeSet, so shipping a
   # one-line file is not a freeze of the rest of the settings.
+  #
+  # Language is the key SystemConf::get("system.language") maps to when there is no
+  # batocera.conf (es-core/src/SystemConf.cpp:18-19), i.e. exactly what picking
+  # 简体中文 in the menu writes.  It is defaulted here because ES never applies it
+  # itself: main.cpp:345-348 initialises gettext with an empty locale, so the UI
+  # language is the environment.  r36-es reads this value and exports it.
   mkdir -p ${INSTALL}/root/.emulationstation
   cat > ${INSTALL}/root/.emulationstation/es_settings.cfg <<'EOS'
-<!-- r36max2 default: select the installed art-book-next theme. Everything else is
-     whatever this fork's Settings.cpp defaults are until the user changes it. -->
+<!-- r36max2 default: select the installed art-book-next theme and the Simplified
+     Chinese UI. Everything else is whatever this fork's Settings.cpp defaults are
+     until the user changes it. -->
 <config>
 	<string name="ThemeSet" value="art-book-next" />
+	<string name="Language" value="zh_CN" />
 </config>
 EOS
   # ES also reads a system-wide copy for other accounts; the root one is what the device

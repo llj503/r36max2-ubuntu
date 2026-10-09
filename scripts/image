@@ -526,6 +526,18 @@ v "  art-book theme: ${nth} files under /root/.emulationstation/themes/art-book-
 [ "${nth}" -ge 1000 ] || { v "  !! the art-book theme is missing or nearly empty (${nth} files)"; fail=1; }
 SUDO grep -q 'name="ThemeSet" value="art-book-next"' "${MNT}/root/root/.emulationstation/es_settings.cfg" 2>/dev/null \
   || { v "  !! es_settings.cfg does not select art-book-next - ES would show its default theme"; fail=1; }
+
+# Translations need BOTH halves or the LANGUAGE menu row silently does nothing:
+# the catalog under /usr/share/locale (ES binds gettext there, main.cpp:348) and a
+# generated locale, because glibc ignores LANGUAGE while the effective locale is in
+# the C family (measured on the board 2026-10-09).  Neither half produces an error.
+ncat=$(SUDO find "${MNT}/root/usr/share/locale" -name emulationstation2.mo 2>/dev/null | wc -l)
+v "  ES catalogs: ${ncat} emulationstation2.mo under /usr/share/locale"
+[ "${ncat}" -ge 30 ] || { v "  !! expected the ~35 upstream catalogs, got ${ncat} - the host is missing msgfmt?"; fail=1; }
+SUDO test -f "${MNT}/root/usr/lib/locale/zh_CN.UTF-8/LC_MESSAGES/SYS_LC_MESSAGES" \
+  || { v "  !! no generated zh_CN.UTF-8 locale - LC_MESSAGES cannot resolve and ES stays English"; fail=1; }
+SUDO grep -q 'name="Language" value="zh_CN"' "${MNT}/root/root/.emulationstation/es_settings.cfg" 2>/dev/null \
+  || { v "  !! es_settings.cfg has no Language default - r36-es would start ES in English"; fail=1; }
 nrom=$(SUDO ls -1d "${MNT}/root/roms"/*/ 2>/dev/null | wc -l)
 v "  /roms system dirs: ${nrom}"
 [ "${nrom}" -ge 20 ] || { v "  !! /roms is missing or nearly empty - ES drops systems whose path does not exist"; fail=1; }

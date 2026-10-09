@@ -47,6 +47,39 @@ find_es() {
     return 1
 }
 
+# ES's UI language comes from the ENVIRONMENT, not from its own setting.  This build
+# has -DHAVE_INTL, so _(x) is glibc gettext, and startup only ever calls
+# EsLocale::init("", ...) (es-app/src/main.cpp:345-348) - nothing hands the "Language"
+# value the menu saves into es_settings.cfg to setenv/setlocale.  So the launcher does.
+# Measured on the board 2026-10-09 with the real zh_CN catalog installed, through the
+# same glibc gettext ES calls:
+#   LANG=C.UTF-8 LANGUAGE=zh_CN          -> gettext("SETTINGS") = "SETTINGS"
+#   LANG=C.UTF-8 LC_MESSAGES=zh_CN.UTF-8 -> gettext("SETTINGS") = "设置"
+# LANGUAGE is ignored while the locale is in the C family, and this rootfs ships no
+# generated locales (`locale -a` = C, C.utf8, POSIX), which is why
+# packages/ui/emulationstation/package.mk generates ES_LOCALES_TO_GENERATE.  Only
+# LC_MESSAGES is exported: LC_CTYPE stays C.UTF-8, so nothing else on the box changes
+# its idea of what a character is.
+apply_language() {
+    lang=$(sed -n 's#.*<string name="Language" value="\([^"]*\)".*#\1#p' \
+        "${HOME:-/root}/.emulationstation/es_settings.cfg" 2>/dev/null | head -1)
+    case "$lang" in
+        ""|en_US|en)
+            echo "  language: en_US (msgid language, no catalog to load)"
+            return 0
+            ;;
+    esac
+    if [ -f "/usr/lib/locale/${lang}.UTF-8/LC_MESSAGES/SYS_LC_MESSAGES" ]; then
+        LC_MESSAGES="${lang}.UTF-8" LANGUAGE="$lang"
+        export LC_MESSAGES LANGUAGE
+        echo "  language: ${lang} -> LC_MESSAGES=${lang}.UTF-8"
+    else
+        echo "  !! language ${lang} has no generated locale (/usr/lib/locale/${lang}.UTF-8),"
+        echo "     so ES stays English; add it to ES_LOCALES_TO_GENERATE in"
+        echo "     packages/ui/emulationstation/package.mk and rebuild the image"
+    fi
+}
+
 stall() { journalctl -b -k --no-pager 2>/dev/null | grep -cE 'vblank wait timed out|wait_for_vblanks|flip_done timed out'; }
 
 # Count ES by PROCESS NAME, never by `pgrep -f "$ES"`.  Measured 21:02: the argv pattern
@@ -118,6 +151,7 @@ run_es() {
     export XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$SOCK
     export SDL_VIDEODRIVER=wayland SDL_AUDIODRIVER=alsa
     export HOME=${HOME:-/root}
+    apply_language
     # stdbuf: ES is often killed by a timer during testing, and a killed process
     # loses its buffered stdout - which reads as "the log is empty, it never ran"
     setsid stdbuf -oL -eL "$ES" --no-splash "$@" > /tmp/es-run.log 2>&1 &
@@ -133,6 +167,8 @@ case "${1:-run}" in
         echo "  pad readers: $(for p in $(ls /proc | grep -E '^[0-9]+$'); do ls -l /proc/$p/fd 2>/dev/null | grep -q 'input/event2' && printf '%s:%s ' $(cat /proc/$p/comm 2>/dev/null) $p; done)"
         echo "  roms      : $(ls /root/roms 2>/dev/null | head -6 | tr '\n' ' ')"
         echo "  config    : $(ls /root/.emulationstation 2>/dev/null | tr '\n' ' ')"
+        echo "  language  : setting=$(sed -n 's#.*<string name="Language" value="\([^"]*\)".*#\1#p' "${HOME:-/root}/.emulationstation/es_settings.cfg" 2>/dev/null | head -1)  catalogs=$(ls /usr/share/locale/*/LC_MESSAGES/emulationstation2.mo 2>/dev/null | wc -l)  locales=$(ls -d /usr/lib/locale/*.UTF-8 2>/dev/null | wc -l)"
+        echo "  running ES LC_MESSAGES: $(for p in $(pgrep emulationstatio 2>/dev/null | head -1); do tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -E '^(LC_MESSAGES|LANGUAGE)=' | tr '\n' ' '; done)"
         echo "  stall since boot: $(stall)"
         ;;
     --stop)
@@ -164,6 +200,7 @@ case "${1:-run}" in
         chvt 1 2>/dev/null
         export SDL_VIDEODRIVER=kmsdrm SDL_AUDIODRIVER=alsa XDG_VTNR=1 HOME=${HOME:-/root}
         unset WAYLAND_DISPLAY XDG_RUNTIME_DIR
+        apply_language
         echo "  stall counter before start: $(stall)"
         # not exec: the bridge must come back when ES exits, even from Ctrl-C
         stdbuf -oL -eL "$ES" --fullscreen --no-splash "$@"
