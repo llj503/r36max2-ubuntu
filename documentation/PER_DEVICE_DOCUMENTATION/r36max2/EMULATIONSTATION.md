@@ -245,3 +245,65 @@ B 是决定性的：只有修复后的代码才会以那个路径打开容量文
 
 **目视确认（2026-10-09，作者）**：屏幕上电量就是 100%。这一条上程序侧和眼睛侧结论一致——
 bind-mount 实验已经证明 ES 读的是 `rk817-battery/capacity`（值 100），现在渲染出来也对。
+
+# 更正上一条：一个"载体 locale"就够，不用每种语言都生成（2026-10-09 实测）
+
+上面那节写的是"`ES_LOCALES_TO_GENERATE` 每种语言各生成一份（~3.1 MB × 35）"，
+`apply_language()` 也因此要求存在一个名字正好是 `<lang>.UTF-8` 的 locale。
+**后半句是错的**，而且错得很关键：镜像里只生成了 `zh_CN`，于是除中文外
+**任何一种语言都永远切不过去**——这正是"改了还是中文"的第二层原因。
+
+用一个直接链到 ES 同一套 glibc gettext 的探针（`F:\r36-build\gprobe.c`，交叉编译后在卡上跑）
+实测四种组合，msgid 用 ES 自己目录里的真词条：
+
+| 环境组合 | `gettext("SETTINGS")` |
+| --- | --- |
+| `LC_ALL=C.UTF-8 LANGUAGE=fr_FR` | `SETTINGS`（C 族下 LANGUAGE 被忽略）|
+| `LANG=fr_FR.UTF-8 LANGUAGE=fr_FR`（没生成这个 locale）| `SETTINGS` |
+| **`LC_MESSAGES=zh_CN.UTF-8 LANGUAGE=fr_FR`** | **`PARAMÈTRES`** ← 载体是中文，出来是法语 |
+| `LC_MESSAGES=zh_CN.UTF-8 LANGUAGE=zh_CN` | `设置` |
+
+结论：**locale 和 language 是两件独立的事**。只要有一个非 C 族的 locale 能让
+`LC_MESSAGES` 解析成功，具体翻成哪种语言就由 `LANGUAGE` 决定；而 glibc 自己会把
+`fr_FR` 截断回退到 `fr` 目录，所以菜单里那 35 个代码一个都不用额外生成。
+`apply_language()` 现在从 `/usr/lib/locale` 里挑一个非 C 载体（跳过 `C`/`C.*`/`POSIX`），
+再按 `<lang>` → `<lang前缀>` 找 catalog，两个条件都不满足才打印一行说明并退回英文。
+
+# core dump 抓不到 C++ 抛点，`__cxa_throw` 拦截才抓得到（2026-10-09）
+
+`rc=134` 那条 abort 想知道真正的抛点，试了两条路，只有第二条成：
+
+**core dump 是死路**，两个独立原因叠在一起：
+1. `abort()` 会**复用**装着抛点返回地址的那段栈。等 `std::terminate` → `abort` 跑起来，
+   帧链上已经没有抛出者了——拿 200 MB 的 core 解出来只有
+   `raise` / `verbose_terminate_handler` / `__cxa_rethrow`，`bt` 在第三帧就断
+   （"previous frame inner to this frame (corrupt stack?)"）。
+2. 卡上装的二进制**是被框架 strip 过的**（`scripts/build` 的 `BUILD_CLEANUP_INSTALL`：
+   `BUILD_WITH_DEBUG != yes` 且 `strip` 默认开），所以只有 `.text`，gdb 连符号都没有。
+   未 strip 的那份（201 MB，带 `.symtab` + `.debug_info`）在
+   `build.<arch>/build/emulationstation-*/emulationstation`，地址完全一致，解栈要用它。
+
+**能用的办法**：在 `__cxa_throw` 上拦截——抛出那一刻帧链还是完整的。三个坑都踩过：
+- 必须 `extern "C"`。写成 C++ 函数会被修饰成 `_Z11__cxa_throwPv...`，永远匹配不上，
+  插桩一声不响，看起来像"没崩"而不是"没抓到"。
+- `LD_PRELOAD` 走不通：启动器用 `stdbuf` 包了 ES，`stdbuf` 会**替换**掉这个变量
+  （实测进程环境里只剩 `/usr/libexec/rust-coreutils/libstdbuf.so`）。改用
+  `/etc/ld.so.preload`，那是动态加载器自己读的。
+- preload 是全局的，所以要按 `/proc/self/exe` 限定只在 `emulationstation` 里动作。
+
+拿到的 12 帧里，`#02` 往后减 4（返回地址要回到 call 指令本身）交给 `addr2line`：
+
+```
+main.cpp:782 -> InputManager.cpp:879 -> Window.cpp:288
+  -> GuiSettings.cpp:101（保存遍历）-> GuiMenu.cpp:2139 -> vector<string>::at(0)
+```
+
+顺带一条读代码就能得到的教训：日志里 `InputManager::parseEvent` 或 `GuiComponent::input`
+这个"位置"**不能当线索用**。`main.cpp:782` 把整个 `parseEvent` 包在 `TRYCATCH` 里，任何更
+深处的 Gui 处理器抛出都会被记成这个名字；而 `TRYCATCH`（`Log.h:11-13`）的
+`throw e;` 会**切片**成 `std::exception`，外面几层连类型都看不到。
+
+还有个自己的失误值得记：第一版补丁把 `if (optionsGpuGovernors->changed()) {` 整行删掉了，
+括号失衡编不过。`patch` 干净应用、以及"和我想改的文件逐字节相同"这两件事**都不能证明编得
+过**——只有真正编译能证明。现在补丁是先用构建自己的 `CXX_DEFINES/CXX_INCLUDES/CXX_FLAGS`
+跑一遍 `-fsyntax-only` 才提交的。

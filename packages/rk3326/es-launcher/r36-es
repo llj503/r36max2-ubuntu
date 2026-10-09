@@ -70,9 +70,13 @@ find_es() {
 # for nothing; see ES_LOCALES_TO_GENERATE in packages/ui/emulationstation/package.mk.
 # Only LC_MESSAGES is exported, so LC_CTYPE stays C.UTF-8 and nothing else on the box
 # changes its idea of what a character is.
+read_language() {
+    sed -n 's#.*<string name="Language" value="\([^"]*\)".*#\1#p' \
+        "${HOME:-/root}/.emulationstation/es_settings.cfg" 2>/dev/null | head -1
+}
+
 apply_language() {
-    lang=$(sed -n 's#.*<string name="Language" value="\([^"]*\)".*#\1#p' \
-        "${HOME:-/root}/.emulationstation/es_settings.cfg" 2>/dev/null | head -1)
+    lang=$(read_language)
     case "$lang" in
         ""|en_US|en)
             echo "  language: en_US (msgid language, no catalog to load)"
@@ -235,11 +239,29 @@ case "${1:-run}" in
         chvt 1 2>/dev/null
         export SDL_VIDEODRIVER=kmsdrm SDL_AUDIODRIVER=alsa XDG_VTNR=1 HOME=${HOME:-/root}
         unset WAYLAND_DISPLAY XDG_RUNTIME_DIR
-        apply_language
         echo "  stall counter before start: $(stall)"
         # not exec: the bridge must come back when ES exits, even from Ctrl-C
-        stdbuf -oL -eL "$ES" --fullscreen --no-splash "$@"
-        rc=$?
+        #
+        # A language change can only land on a NEW process: this build has
+        # -DHAVE_INTL so _(x) is glibc gettext, whose locale is fixed by the
+        # setlocale() done at startup (main.cpp:345-348), and ES never hands its own
+        # "Language" setting to it - this launcher does, before the process starts.
+        # ES's own "RESTART EMULATIONSTATION" row is not a restart: GuiMenu.cpp:6016
+        # calls quitES(QuitMode::QUIT), the same thing the plain QUIT row does
+        # (Platform.cpp:216-238 only pushes SDL_QUIT and returns 0), and
+        # r36-es.service is Restart=on-failure on purpose so a clean exit lands on
+        # the console.  Re-run here when the setting actually changed, which is what
+        # the user means by "restart ES to apply it"; anything else still exits to
+        # the console as before.
+        while :; do
+            lang_before=$(read_language)
+            apply_language
+            stdbuf -oL -eL "$ES" --fullscreen --no-splash "$@"
+            rc=$?
+            lang_after=$(read_language)
+            [ "$lang_before" != "$lang_after" ] || break
+            echo "  language changed (${lang_before:-en_US} -> ${lang_after}); restarting ES to apply it"
+        done
         echo "  ES exited rc=$rc; restoring the joypad bridge"
         bridge_on
         exit $rc

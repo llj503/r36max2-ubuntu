@@ -139,20 +139,33 @@
   recipe 与核都留在树里（`packages/libretro/libretro-parallel-n64`），修好插件选择就把
   `es_systems.cfg` 里那段注释恢复即可。
   **注意**：不要用"全局改成要桌面 GL 上下文"去修——那会牵动另外 8 个已经正常的核。
-- **进 ES 设置菜单时 ES 会 abort（rc=134），2026-10-09 实测两次，未定位**：journal 里两次
-  （11:44:38 与 11:45:07）都是同一串
-  `ERROR GuiComponent::input Exception vector::_M_range_check: __n (which is 0) >= this->size() (which is 0)`
-  → `terminate called after throwing an instance of 'std::exception'` → `status=134`。
-  这就是"进设置换语言"当时没生效的直接原因：`es_settings.cfg` 只在设置**改动之后**才写盘，
-  进程在写之前就死了。每次 abort 前还都有两行 `sh: 1: /usr/bin/rocknix-keyboard: not found`
-  （ROCKNIX 的键盘布局工具，本镜像没有），但读代码已经**排除**它是原因：
-  `GuiMenu.cpp:1583-1585` 无论工具在不在都会补一个 `curLayout` 兜底项，`populateVariants`
-  也总会加 `NONE`，两个 `OptionListComponent` 不会是空的。
-  剩下两个候选都还没证伪：`OptionListComponent::getSelected()` 直接 `at(0)`，而 Release 构建里
-  `assert` 被编译掉了；以及 `reloadGuiMenu`（`GuiMenu.cpp:3070-3076`）的
-  `delete pthis; window->pushGui(new GuiMenu(window, false))`。
-  板子上装不了 gdb（见上面 apt 快照那条），但 ES 二进制**没 strip 且带 `debug_info`**，
-  所以下一步是 `LimitCORE=infinity` + 改 `core_pattern` 拿一份 core，在构建机上用
-  `gdb-multiarch` 读栈——比继续猜快。
+- ~~**进 ES 设置菜单时 ES 会 abort（rc=134），2026-10-09 实测两次，未定位**~~
+  **已定位并修好（2026-10-09）**：抛点是 `GuiMenu.cpp:2139`——"DEFAULT GPU SCALING
+  GOVERNOR" 那行的保存函数**无条件**调 `getSelected()`（写在 `if (changed())` 外面），
+  而 `getSelected()` 就是 `getSelectedObjects().at(0)`。这个列表在卡上是空的：
+  `getAvailableGpuGovernors()` 靠 `/etc/profile.d/099-freqfunctions` 枚举，那是 ROCKNIX
+  自带脚本，Ubuntu rootfs 没有。上面 CPU 那一行没崩，只因为 `GuiMenu.cpp:2101-2102` 给它
+  补了兜底项；GPU 这里用的 `selectFirstItem()` 在空列表上什么都做不了（它自己就检查
+  `mEntries.size() > 0`）。
+  当初那两条嫌疑都被读代码**否掉**了，别重复走：语言列表是硬编码 35 项不可能为空；时区那段
+  在 `ROCKNIX:BOOL=OFF` 下根本没编进去。`rocknix-keyboard: not found` 也只是同期出现。
+  另外纠正一条写错的事实：这块板子的 GPU **是有** governor 的
+  （`/sys/devices/platform/ff400000.gpu/devfreq/…/available_governors` =
+  `userspace powersave performance simple_ondemand`，当前 `simple_ondemand`），所以不是
+  "硬件没有"，是 ES 取不到；把这一行真正接起来是独立的功能，没做。
+  修法见 `packages/ui/emulationstation/patches/0102-gpu-governor-save-guard.patch`（没有
+  可选项就 return）。修完实测：`NRestarts=0`、`range_check` 0 条、`status=134` 0 次，
+  并且 `es_settings.cfg` 在 14:51:44 真的被写入——之前它一直停在 12:18，因为进程在写盘前
+  就死了，这才是"改语言改不掉"的直接原因。定位过程见
+  [EMULATIONSTATION.md](EMULATIONSTATION.md) 的"core dump 抓不到抛点"一节。
+- **`RESTART EMULATIONSTATION` 这一行名不副实**：`GuiMenu.cpp:6016` 调的是
+  `quitES(QuitMode::QUIT)`，和普通 QUIT 完全一样（`Platform.cpp:216-238` 只 push 一个
+  `SDL_QUIT` 然后 `return 0`），不产生任何"要重启"的信号。上游靠外层脚本无脑重开 ES，而
+  `r36-es.service` 故意是 `Restart=on-failure`（正常退出回控制台，方便调试），于是这一行
+  只会把人送回控制台。语言这类"必须新进程才生效"的设置现在由 `r36-es --kmsdrm` 里的循环
+  兜住：ES 退出后重读 `Language`，**变了就重开一轮**，没变就照旧回控制台。
+- **改语言一定要有一个新进程**：这个 build 带 `-DHAVE_INTL`，`_(x)` 是 glibc gettext，
+  locale 在启动时那次 `setlocale` 就定死了（`main.cpp:345-348`），ES 自己也不会把
+  `Language` 交给 gettext，所以菜单里选完不会当场变文字——设计如此，不是 bug。
 - 1 GB RAM：没上 zram/swap，编译大项目要省着点。
 
