@@ -28,6 +28,12 @@ PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain rootfs-apt"
 PKG_LONGDESC="EmulationStation front end (emulationstation-next, GLES3), cross-built."
 PKG_TOOLCHAIN="cmake-make"
+# scripts/build strips ${INSTALL}/usr/share/locale from every target package as a
+# size optimisation, but that is exactly where makeinstall_target below puts the
+# gettext catalogs ES binds its "emulationstation2" domain to (main.cpp:348).  The
+# deletion is silent - no error, the UI just stays English - which is how the first
+# build of this recipe produced an image whose LANGUAGE menu did nothing.
+PKG_BUILD_FLAGS="locale"
 
 # -DGLES3=1 is real (options declared: GLES/GLES2/GLES3/GL) and cmake then reports
 # "Found OpenGLES3 ... libGLESv2.so".  -DGL_SYSTEM=1 was NOT: cmake warned

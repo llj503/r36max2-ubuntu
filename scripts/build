@@ -575,7 +575,15 @@ if [ "${TARGET}" = "target" -o "${TARGET}" = "init" ]; then
     rm -rf ${INSTALL}/{usr/local/,usr/,}share/doc
     rm -rf ${INSTALL}/{usr/local/,usr/,}share/gtk-doc
     rm -rf ${INSTALL}/{usr/local/,usr/,}share/info
-    rm -rf ${INSTALL}/{usr/local/,usr/,}share/locale
+    # share/locale is the one entry here that a program can need at RUNTIME, not
+    # just for reading on the build host: gettext resolves its catalogs from
+    # <bindtextdomain dir>/<lang>/LC_MESSAGES/<domain>.mo, and EmulationStation
+    # binds "emulationstation2" to /usr/share/locale (main.cpp:348).  Deleting it
+    # is silent - the UI just stays in the msgid language - so a package that
+    # ships catalogs has to opt out with PKG_BUILD_FLAGS="locale".
+    if ! flag_enabled "locale" "no"; then
+      rm -rf ${INSTALL}/{usr/local/,usr/,}share/locale
+    fi
     rm -rf ${INSTALL}/{usr/local/,usr/,}share/man
     rm -rf ${INSTALL}/{usr/local/,usr/,}share/zsh
     rm -rf ${INSTALL}/{usr/local/,usr/,}var
