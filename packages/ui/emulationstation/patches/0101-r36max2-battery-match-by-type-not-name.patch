@@ -1,0 +1,32 @@
+--- a/es-core/src/utils/Platform.cpp	2026-10-09 12:41:42.380997505 +0800
++++ b/es-core/src/utils/Platform.cpp	2026-10-09 12:41:42.397153907 +0800
+@@ -447,6 +447,29 @@
+ 						chargerRootPath = file;
+ 				}
+ 
++				// r36max2: every probe above matches on the device NAME, and the "/bat" test
++				// needs a leading slash, so only a legacy /sys/class/power_supply/battery
++				// entry can match.  Mainline registers this board's fuel gauge as
++				// "rk817-battery", so nothing matched: batteryRootPath stayed empty,
++				// batteryCapacityPath was never built, and control fell into the
++				// fuel-gauge branch with both charge paths empty - ret.level kept its
++				// default 0 while hasBattery came out true from the "charger" match.
++				// ES showed 0% while sysfs reported capacity=100.  Ask each device what it
++				// is instead of guessing from its name; r36-status-screen resolves it the
++				// same way on this board.
++				if (batteryRootPath.empty())
++				{
++					for (auto file : files)
++					{
++						if (Utils::String::toLower(Utils::String::replace(
++								Utils::FileSystem::readAllText(file + "/type"), "\n", "")) == "battery")
++						{
++							batteryRootPath = file;
++							break;
++						}
++					}
++				}
++
+ 				// If there's no battery device, look for discrete charger and fuel gauge
+ 				if (batteryRootPath.empty())
+ 				{

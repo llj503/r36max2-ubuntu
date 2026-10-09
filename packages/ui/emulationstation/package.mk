@@ -85,6 +85,28 @@ post_unpack() {
     die "emulationstation: external/pugixml has no CMakeLists.txt - add_subdirectory would fail"
 }
 
+post_patch() {
+  # Battery level read 0% on this board while /sys/class/power_supply/rk817-battery
+  # said capacity=100.  Platform.cpp picks the battery by NAME substring, and its
+  # "/bat" test needs a leading slash, so only a legacy .../power_supply/battery
+  # entry can ever match; mainline names this gauge "rk817-battery".  Nothing
+  # matched, so batteryCapacityPath stayed empty and ret.level kept its default 0
+  # (Platform.h:58) - while hasBattery still came out true, because "charger" does
+  # match rk817-charger.  Hence an icon at 0%, not "no battery".
+  #
+  # patches/0101-*.patch fixes it by resolving the device through its own type=
+  # attribute, which is what /usr/local/sbin/r36-status-screen already does on this
+  # board for the same reason (KNOWN-ISSUES.md, the batt: ?% entry).
+  #
+  # scripts/unpack applies patches/*.patch itself and does NOT check patch's exit
+  # status, and BUILD_CLEANUP_INSTALL then deletes the *.rej that a failed apply
+  # would leave behind - so a patch that stopped applying after an upstream bump
+  # would vanish with no signal.  Assert the content instead.
+  grep -q 'r36max2: every probe above matches on the device NAME' \
+    ${PKG_BUILD}/es-core/src/utils/Platform.cpp ||
+    die "emulationstation: the battery patch did not apply - ES would show 0% with a charged battery"
+}
+
 makeinstall_target() {
   # binary is at the repo root (upstream overrides CMAKE_RUNTIME_OUTPUT_DIRECTORY)
   local BIN="${PKG_BUILD}/emulationstation"
