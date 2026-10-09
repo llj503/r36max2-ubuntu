@@ -43,6 +43,7 @@ if [ -z "$core" ]; then
 		gb|gbc) core=gambatte ;;
 		gba) core=mgba ;;
 		psx) core=pcsx_rearmed ;;
+		n64) core=parallel_n64 ;;
 		dreamcast) core=flycast ;;
 		saturn) core=mednafen_saturn ;;
 		*)

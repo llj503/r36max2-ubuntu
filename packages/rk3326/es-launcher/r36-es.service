@@ -1,0 +1,27 @@
+[Unit]
+Description=r36max2 EmulationStation on the bare console
+# audio.service first: it is what pins the mixer to the shipped default, and ES can be
+# in a game with sound a second after it starts.
+After=multi-user.target audio.service
+Wants=audio.service
+
+[Service]
+Type=simple
+# --kmsdrm, not the weston path. This fork's r36-es stops the joypad bridge for the
+# duration (the bridge's EVIOCGRAB leaves ES with a pad that reads zero events) and puts
+# it back when ES exits, so the desktop/browser behaviour is unchanged.
+ExecStart=/usr/local/bin/r36-es --kmsdrm
+# ES reads /root/.emulationstation for both cfgs, and DRM master needs root.
+User=root
+Environment=HOME=/root
+# stdout goes to the journal, not to tty1: the panel is owned by ES, so a console write
+# would be invisible, and `journalctl -u r36-es` is the only way to see this remotely.
+StandardOutput=journal
+StandardError=journal
+# A crash should come back. A clean exit means the user chose Quit in ES, and then the
+# console is the right place to land - so not Restart=always.
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -20,6 +20,12 @@ makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-es ${INSTALL}/usr/local/bin/r36-es
   install -m 755 ${PKG_DIR}/r36-play ${INSTALL}/usr/local/bin/r36-play
 
+  # Boot straight into ES. Without this the device comes up on the console status page
+  # and ES has to be started by hand over SSH, which is not a thing a handheld can do.
+  mkdir -p ${INSTALL}/usr/lib/systemd/system
+  install -m 644 ${PKG_DIR}/r36-es.service ${INSTALL}/usr/lib/systemd/system/r36-es.service
+  enable_service r36-es.service
+
   # The ROM tree has to exist before ES starts, or a system whose <path> is missing is
   # dropped from the list silently (the "demo" entry proved this: ES logged
   # 'System "demo" path does not exist !' and then showed nothing). Directory names

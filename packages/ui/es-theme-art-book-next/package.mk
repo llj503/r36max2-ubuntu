@@ -25,4 +25,25 @@ makeinstall_target() {
   local DEST="${INSTALL}/root/.emulationstation/themes/art-book-next"
   mkdir -p "${DEST}"
   cp -al ${PKG_BUILD}/. "${DEST}/" 2>/dev/null || cp -a ${PKG_BUILD}/. "${DEST}/"
+
+  # Installing the theme is only half of it: ES picks the theme from the ThemeSet
+  # *setting*, whose default is "system-theme", so without this file a card with the
+  # theme present still shows the built-in one. Format is from this fork's own writer
+  # (es-core/src/Settings.cpp:508, a <config> root with <string name= value=/> children)
+  # - the card had no es_settings.cfg at all, because saveFile() only runs when a setting
+  # is actually changed, so nothing here could be copied from a working device.
+  # ES rewrites this file on the first user change and keeps ThemeSet, so shipping a
+  # one-line file is not a freeze of the rest of the settings.
+  mkdir -p ${INSTALL}/root/.emulationstation
+  cat > ${INSTALL}/root/.emulationstation/es_settings.cfg <<'EOS'
+<!-- r36max2 default: select the installed art-book-next theme. Everything else is
+     whatever this fork's Settings.cpp defaults are until the user changes it. -->
+<config>
+	<string name="ThemeSet" value="art-book-next" />
+</config>
+EOS
+  # ES also reads a system-wide copy for other accounts; the root one is what the device
+  # actually uses (r36-es runs as root with HOME=/root).
+  mkdir -p ${INSTALL}/etc/emulationstation
+  cp -f ${INSTALL}/root/.emulationstation/es_settings.cfg ${INSTALL}/etc/emulationstation/es_settings.cfg
 }
