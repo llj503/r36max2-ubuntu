@@ -122,10 +122,17 @@
 - **测量 RetroArch 之前必须先停 ES**：两者都要 DRM master，ES 在前台时 RetroArch 会
   `Cannot open video driver` 然后**在自己的错误路径里 SIGSEGV（rc=139）**，看起来像核心崩了。
   细节与被污染的测量见 [EMULATORS.md](EMULATORS.md)。
-- **N64（parallel-n64）当前不可用**：核能编出来（aarch64 dynarec 确认在二进制里），但三个真游戏
-  全部在**第一帧之前** SIGSEGV，位置固定在 `SET_MEMORY_MAPS` 之后。已排除：DRM master（ES 停了
-  照崩）、CPU dynarec（`parallel-n64-cpucore = "interpreter"` 照崩）、RSP 插件、GFX 插件
-  （`gles2n64` 照崩，且 `HAVE_GLIDEN64=0` 根本链不过：`libretro.o` 还引用 `ChangeSize`/`vbo_disable`）。
-  系统条目暂时仍留在 `es_systems.cfg` 里，**选中它会闪退**——要么修好，要么从菜单里摘掉。
+- **N64（parallel-n64）当前不可用，已从 ES 菜单里摘掉**：核能编出来（aarch64 dynarec 确认在
+  二进制里：`new_dynarec.o` + `linkage_arm64.o` + `trampoline_arm64.o`，符号 `new_dynarec_init`），
+  但三个真游戏全部在**第一帧之前** SIGSEGV。内核给的寄存器是 **`pc : 0000000000000000`**
+  —— 程序计数器为 0，即**通过空函数指针调用**。崩溃位置固定在 `SET_MEMORY_MAPS` 之后、紧跟
+  4 次 `GET_SYSTEM_DIRECTORY`，也就是视频插件启动那一段。本机 RetroArch 的上下文是
+  **OpenGL ES 3.1（Panfrost）**，而该核默认插件 GLideN64 要桌面 GL 的函数指针。
+  已试过并排除的：停 ES（DRM master 冲突会伪装成同样的 139，见 EMULATORS.md）、
+  `parallel-n64-cpucore = "interpreter"`、`parallel-n64-rspplugin`、`parallel-n64-gfxplugin = "gles2n64"`
+  —— 全都同样崩；而 `HAVE_GLIDEN64=0` 根本链不过（`libretro.o` 仍引用 `ChangeSize`/`vbo_disable`）。
+  recipe 与核都留在树里（`packages/libretro/libretro-parallel-n64`），修好插件选择就把
+  `es_systems.cfg` 里那段注释恢复即可。
+  **注意**：不要用"全局改成要桌面 GL 上下文"去修——那会牵动另外 8 个已经正常的核。
 - 1 GB RAM：没上 zram/swap，编译大项目要省着点。
 

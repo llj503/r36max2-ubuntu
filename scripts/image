@@ -516,7 +516,7 @@ while IFS="$(printf '\t')" read -r sysname syspath syscores; do
     || { v "  !! system ${sysname} scans ${syspath}, which is absent or empty - ES would drop it silently"; fail=1; }
 done <<< "${esmap}"
 v "  cfg systems cross-checked: ${nsys} (every <core> installed, every <path> present and non-empty)"
-[ "${nsys}" -ge 9 ] || { v "  !! es_systems.cfg declares ${nsys} systems, expected at least 9"; fail=1; }
+[ "${nsys}" -ge 8 ] || { v "  !! es_systems.cfg declares ${nsys} systems, expected at least 8"; fail=1; }
 
 # The theme is 288 MB of files, so it is exactly the kind of thing that can silently
 # not arrive (see the /roms empty-directory case). A theme directory with no files, or a

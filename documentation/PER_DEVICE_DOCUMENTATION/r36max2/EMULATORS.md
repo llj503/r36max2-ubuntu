@@ -154,8 +154,13 @@ systemctl stop r36-es ; fuser /dev/dri/card0   # 必须是空的
 
 ## 还没做
 
-- **N64**：`parallel-n64` 链接缺 `-latomic`（和 flycast 同源的问题，还没决定用同一种解法）。
-  游戏包里有 n64 目录，随时可以接。
+- **N64：核在树里，系统条目暂时摘掉了。** `packages/libretro/libretro-parallel-n64` 能编出来，
+  aarch64 dynarec 也确实在二进制里，但三个真游戏全部在第一帧之前 SIGSEGV，内核寄存器显示
+  **`pc = 0x0`**（通过空函数指针调用），位置在视频插件启动处。本机 GL 上下文是 GLES 3.1，
+  而默认插件 GLideN64 要桌面 GL 的入口点。试过 `cpucore=interpreter`、换 RSP、换
+  `gfxplugin=gles2n64` 都同样崩；`HAVE_GLIDEN64=0` 则链不过。修好之前 `es_systems.cfg` 里
+  留着注释说明，恢复只需把那段加回来。详见 [KNOWN-ISSUES.md](KNOWN-ISSUES.md)。
+  **不要用"全局强制桌面 GL 上下文"去修**，那会牵动另外 8 个已经正常的核。
 - **更重的平台**（PS2 / Switch / 3DS / Wii）：1 GB RAM + Mali-G31 这条线不用试，
   arkos4clone 的 32 位 `retroarch32` 核那一套在本镜像里也跑不了（ABI 是 ARMv7）。
 - Saturn 换 `Yaba Sanshiro`（arkos4clone 用它是 standalone SDL 程序，有自己的配置与输入映射）
