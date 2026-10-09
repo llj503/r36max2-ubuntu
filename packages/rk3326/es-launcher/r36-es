@@ -76,10 +76,15 @@ read_language() {
 }
 
 apply_language() {
+    # Clear first, every time.  These are exported into the shell that also runs the
+    # relaunch loop below, so a value left over from the previous iteration would be
+    # inherited by the next ES - switching TO English silently kept the old language
+    # (measured: "language changed (zh_CN -> )" then ES running with LANGUAGE=zh_CN).
+    unset LC_MESSAGES LANGUAGE
     lang=$(read_language)
     case "$lang" in
         ""|en_US|en)
-            echo "  language: en_US (msgid language, no catalog to load)"
+            echo "  language: ${lang:-en_US} (msgid language, no catalog to load)"
             return 0
             ;;
     esac
