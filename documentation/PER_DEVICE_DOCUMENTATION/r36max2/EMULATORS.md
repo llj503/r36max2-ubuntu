@@ -79,6 +79,17 @@ ES 的 <command> = /usr/local/bin/r36-play %ROM%
 
 游戏全部来自游戏包里的**真游戏**，不是手搓的测试 ROM。
 
+**测量前必须先把 ES 停掉。** ES 和 RetroArch 都要 DRM master，ES 在前台时 RetroArch 拿不到
+模式设置，日志是 `[KMS] Error when switching mode` → `Cannot open video driver` → 然后在自己的
+错误路径里 **SIGSEGV（rc=139）**。这个 139 看起来完全像是"核心崩了"，实际上核心一行代码都没跑。
+第一次 N64 测量就是这么被废掉的（`r36-es.service` 装上之后每次开机都有 ES 在前台，所以这个坑
+以后每次都会踩）：
+
+```sh
+systemctl stop r36-es ; fuser /dev/dri/card0   # 必须是空的
+```
+
+
 | 系统 | 核 | 游戏 | 标称 | 实测持续 | 结论 |
 | --- | --- | --- | --- | --- | --- |
 | nes | fceumm | 宝石方块.zip | 60.10 | **59.82 fps** | 满速 |

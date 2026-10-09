@@ -113,4 +113,19 @@
   （比如同时按两个键产生的中间电压档）；6.12.79 那条线目前跑的还是镜像里自带的整数
   GPIO 版模块，gpiod 版虽然同样能编（同一份源码），但没在 6.12 上重装验证过——
   注意它和新 dtb 的极性是配套的，别只换一半。
+- **卡上装不了任何新包**（2026-10-09 实测）：镜像里的包是 `packages/rk3326/rootfs-apt` 从
+  **snapshot.ubuntu.com 的固定时间点**装的，而 `/etc/apt/sources.list` 指向
+  `http://archive.ubuntu.com/ubuntu/` 活源。两边已经错开，所以 `apt-get install gdb` 直接
+  `E: Unmet dependencies`（`dpkg -C` 平时是干净的，只有装新包时才暴露）。这不是镜像坏了，是
+  **可复现构建的代价**：想要额外工具就得在这里改配方重编，或者临时把 sources 换成同一个快照
+  时间点。诊断类工具（gdb/strace）因此**不能**指望在板子上现装。
+- **测量 RetroArch 之前必须先停 ES**：两者都要 DRM master，ES 在前台时 RetroArch 会
+  `Cannot open video driver` 然后**在自己的错误路径里 SIGSEGV（rc=139）**，看起来像核心崩了。
+  细节与被污染的测量见 [EMULATORS.md](EMULATORS.md)。
+- **N64（parallel-n64）当前不可用**：核能编出来（aarch64 dynarec 确认在二进制里），但三个真游戏
+  全部在**第一帧之前** SIGSEGV，位置固定在 `SET_MEMORY_MAPS` 之后。已排除：DRM master（ES 停了
+  照崩）、CPU dynarec（`parallel-n64-cpucore = "interpreter"` 照崩）、RSP 插件、GFX 插件
+  （`gles2n64` 照崩，且 `HAVE_GLIDEN64=0` 根本链不过：`libretro.o` 还引用 `ChangeSize`/`vbo_disable`）。
+  系统条目暂时仍留在 `es_systems.cfg` 里，**选中它会闪退**——要么修好，要么从菜单里摘掉。
 - 1 GB RAM：没上 zram/swap，编译大项目要省着点。
+
