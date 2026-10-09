@@ -187,6 +187,10 @@ ES 退出后把桥恢复回去。
 汉字字形不用额外操心：`Font.cpp:278-285` 的 fallback 列表第一个就是
 `:/DroidSansFallbackFull.ttf`（`resources/` 里有），中日文都落到它上面。
 
+**目视确认（2026-10-09，作者）**：板子上 ES 界面是简体中文。程序侧证据是 `/proc/<pid>/environ`
+里的 `LC_MESSAGES=zh_CN.UTF-8`、`es_settings.cfg` 的 `Language`、以及 35 个 catalog；屏幕上的
+文字只能靠眼睛，这一次已经对上。
+
 两个使用上的事实：**换语言要重启 ES 才生效**（gettext 的 locale 在启动时就定了，菜单里选完
 不会当场变）；`GuiMenu.cpp:1557` 在 `HAVE_INTL` 下会置 `exitreboot`，但只有
 `--exit-on-reboot-required` 才会真的退出（`ExitOnRebootRequired` 默认 false，
@@ -238,3 +242,6 @@ B 是决定性的：只有修复后的代码才会以那个路径打开容量文
 的返回码**，而 `scripts/build` 的 `BUILD_CLEANUP_INSTALL` 随后会删掉失败时留下的 `*.rej`。
 也就是说上游一挪代码、补丁静默失效，构建照样绿。所以 `post_patch()` 里 grep 了插入内容
 的标记串，打不上就 `die`。
+
+**目视确认（2026-10-09，作者）**：屏幕上电量就是 100%。这一条上程序侧和眼睛侧结论一致——
+bind-mount 实验已经证明 ES 读的是 `rk817-battery/capacity`（值 100），现在渲染出来也对。
