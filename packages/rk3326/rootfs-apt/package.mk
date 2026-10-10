@@ -31,6 +31,15 @@ PKG_TOOLCHAIN="manual"
 # packages at all - searching "libretro" in resolute answers "No such package" - so
 # each core is built by its own packages/libretro/<name> recipe and installs into
 # /usr/lib/libretro, which is where es_systems.cfg points RetroArch with -L.
+#
+# The three bare libsdl2-*-2.0-0 runtime packages are for PortMaster's GUI (pugwash).
+# PySDL2 does not fail loudly when one of its extension libraries is missing: it just
+# omits the submodule, so a port that never starts looks like
+#   AttributeError: module 'sdl2' has no attribute 'sdlimage'
+# (measured on the card 2026-10-10).  The python side of PySDL2, harbourmaster, loguru,
+# requests and pypng all arrive inside PortMaster.zip itself (pylibs.zip, which pugwash
+# extracts on first run); only these shared libraries have to come from the archive.
+# libSDL2_mixer is already here through libsdl2-mixer-dev.
 R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   iputils-ping curl wget vim git htop tmux less procps kmod usbutils tzdata net-tools \
   udev systemd-timesyncd python3 alsa-utils evtest input-utils rfkill libnss-mdns fdisk \
@@ -39,7 +48,9 @@ R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   mesa-utils glmark2 libegl1 libgles2 libgbm1 \
   libgbm-dev libegl-dev libgles-dev libdrm-dev \
   weston wayland-protocols libwayland-dev libwayland-bin grim wf-recorder foot wofi kbd cmake \
-  libsdl2-dev libsdl2-mixer-dev libfreeimage-dev libavcodec-dev libavformat-dev libswscale-dev \
+  libsdl2-dev libsdl2-mixer-dev libfreeimage-dev \
+  libsdl2-ttf-2.0-0 libsdl2-image-2.0-0 libsdl2-gfx-1.0-0 \
+  libavcodec-dev libavformat-dev libswscale-dev \
   libcurl4-openssl-dev libasound2-dev libudev-dev libfreetype-dev libfmt-dev \
   rapidjson-dev libvlc-dev gettext \
   retroarch"
@@ -186,6 +197,12 @@ QEOF
 
   # --- device config (all verified on hardware, see documentation/) ----------
   echo "r36max2" > "${R}/etc/hostname" || die "rootfs-apt: cannot write /etc/hostname"
+  # The Ubuntu base tarball ships an EMPTY /etc/hosts, so nothing resolves the
+  # machine's own name and every sudo/sending program prints
+  # "sudo: unable to resolve host r36max2". Harmless by itself, but it buries the
+  # lines that matter - it is what PortMaster's per-port output looked like at first.
+  printf '127.0.0.1\tlocalhost\n127.0.1.1\tr36max2\n::1\tlocalhost ip6-localhost ip6-loopback\n' \
+    > "${R}/etc/hosts" || die "rootfs-apt: cannot write /etc/hosts"
   ln -sf /usr/share/zoneinfo/Asia/Shanghai "${R}/etc/localtime" ||
     die "rootfs-apt: cannot set /etc/localtime"
   echo "Asia/Shanghai" > "${R}/etc/timezone"

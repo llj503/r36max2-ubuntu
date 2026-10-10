@@ -35,6 +35,17 @@ if [ ! -x "$MASTER" ]; then
     rm -rf "$CONTROL/tasksetter" 2>/dev/null || true
 fi
 
+# Two things PortMaster needs to know about this board that no upstream release
+# carries, because it is not one of the CFWs it probes for.  Both are re-applied on
+# every start so a PortMaster self-update cannot silently undo them; without them no
+# port starts at all (see the header of fix_control.py for the measured reason).
+if [ -x "$CONTROL/PortMaster.sh" ]; then
+    grep -q '^19009b4d4b4800000111000000010000,' "$CONTROL/gamecontrollerdb.txt" 2>/dev/null ||
+        cat /usr/config/PortMaster/gamecontrollerdb-r36max2.txt >> "$CONTROL/gamecontrollerdb.txt"
+    python3 /usr/config/PortMaster/fix_control.py ||
+        echo "  !! could not teach PortMaster about this joypad - ports will fail with 'Argument list too long'"
+fi
+
 [ -x "$MASTER" ] || { echo "  !! $MASTER still missing after unpacking"; exit 1; }
 
 if [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/PortMaster" ]; then

@@ -576,7 +576,13 @@ for f in r36-portmaster r36-port; do
 done
 SUDO test -f "${MNT}/root/roms/ports/Start PortMaster.sh" \
   || { v "  !! /roms/ports/Start PortMaster.sh missing - ES would show an empty Ports system"; fail=1; }
-v "  PortMaster: pinned release zip, both launchers, and the ES entry script"
+# Without these two PortMaster cannot start any port here (empty DEVICE -> whole
+# controller DB into one env var -> E2BIG on every execve), so they are worth a check.
+for f in gamecontrollerdb-r36max2.txt fix_control.py; do
+  SUDO test -f "${MNT}/root/usr/config/PortMaster/$f" \
+    || { v "  !! /usr/config/PortMaster/$f missing - ports would fail with 'Argument list too long'"; fail=1; }
+done
+v "  PortMaster: pinned release zip, both launchers, the ES entry, and the two board fixes"
 
 # 4. one kernel tree.  A second /lib/modules directory is how a .ko that nothing loads
 #    ends up on a card.

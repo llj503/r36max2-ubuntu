@@ -41,11 +41,12 @@ makeinstall_target() {
   echo "${PKG_SHA256}  ${CACHED}" | sha256sum -c --status ||
     die "portmaster: PortMaster.zip does not match its pinned sha256"
 
-  # Staging area only; /roms/ports is written on first use by r36-portmaster, so the
-  # image carries one zip rather than an extracted tree that a PortMaster update
-  # would then have to reconcile.
   mkdir -p ${INSTALL}/usr/config/PortMaster/release
   cp -f "${CACHED}" ${INSTALL}/usr/config/PortMaster/release/PortMaster.zip
+
+  # What the upstream release does not know about this board; r36-portmaster applies
+  # both to the unzipped control folder on every start.
+  cp -a ${PKG_DIR}/overlay/ ${INSTALL}/usr/config/PortMaster/
 
   mkdir -p ${INSTALL}/usr/local/bin
   cp ${PKG_DIR}/scripts/r36-portmaster ${INSTALL}/usr/local/bin/r36-portmaster
