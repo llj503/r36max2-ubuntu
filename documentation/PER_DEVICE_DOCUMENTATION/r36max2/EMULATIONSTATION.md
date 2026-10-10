@@ -307,3 +307,23 @@ main.cpp:782 -> InputManager.cpp:879 -> Window.cpp:288
 括号失衡编不过。`patch` 干净应用、以及"和我想改的文件逐字节相同"这两件事**都不能证明编得
 过**——只有真正编译能证明。现在补丁是先用构建自己的 `CXX_DEFINES/CXX_INCLUDES/CXX_FLAGS`
 跑一遍 `-fsyntax-only` 才提交的。
+
+## 菜单里多出来的"Wi-Fi 网络"这一行（2026-10-10）
+
+这个 fork 自带完整的 Wi-Fi 前端 `es-app/src/guis/GuiWifi.cpp`（扫描、已保存/已连接标记、
+连接、忘记、手动输入 SSID，密码走它自己的方向键屏幕键盘 `GuiTextEditPopupKeyboard`），
+而且这文件在 `es-app/CMakeLists.txt` 里是**无条件编译**的 —— 我们一直在编它，只是进不去：
+唯一的入口在 `GuiMenu.cpp:180`，被 `#if defined(BATOCERA) || defined(ROCKNIX)` 包着，
+而这份构建两个选项都是 OFF（`CMakeCache.txt` 里 `BATOCERA:BOOL=OFF`、`ROCKNIX:BOOL=OFF`）。
+
+两个开关都**不能打开**：`ROCKNIX=ON` 会带来对 `/etc/profile.d/099-freqfunctions` 的依赖，
+那个文件不存在造成的空列表正是上面 `0102` 守卫修的东西；`BATOCERA=ON` 把菜单指向
+`batocera-*` / `rocknix-*` 一堆这镜像根本没有的可执行文件。所以 `patches/0103` 在 `#else`
+分支里加了同一条入口，但**直接开 `GuiWifi`，不走 `openNetworkSettings()`** —— 那一页还会去
+开关 sshd、samba、simple-http-server、syncthing、rclone、wireguard，这机器一个都没有，
+而且它的 USB GADGET 行读的是一个本机永远填不满的 `OptionListComponent`（就是 `0102`
+修的那类崩溃）。
+
+这一行能不能出现，取决于一个文件在不在：`isScriptingSupported(WIFI)` 查的是字面路径
+`/usr/bin/wifictl`。后端与全部实测见 [WIFI-AND-SHARING.md](WIFI-AND-SHARING.md)。
+
