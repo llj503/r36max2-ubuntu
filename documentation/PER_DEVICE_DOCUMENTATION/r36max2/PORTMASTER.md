@@ -48,7 +48,15 @@ PortMaster 找自己 control folder 的顺序（`PortMaster.sh` 开头几行，�
 
 `packages/portmaster/overlay/fix_control.py` 在 anchor（`  else\n    DEVICE="${1}"`）前插一条
 `elif`，把 `DEVICE` 设成本机 GUID、`param_device="r36max2"`。它只认**恰好一个** anchor：
-数量不是 1 就打印实际数量并 exit 1，不去猜上游改成了什么。
+数量不是 1 就打印实际数量并 exit 1，不去猜上游改成了什么。（pin 的这份 release 实测
+`control.txt` 7158 字节、anchor 恰好 1 个、没有 `platform-rocknix-` 分支。）
+
+顺带一件实测到的事：这台机器 `device_info.txt` 给出的是 `CFW_NAME=Ubuntu`（卡上实测），而
+release 里**没有** `mod_Ubuntu.txt`（`ls` 只有 Batocera / ArkOS / dArkOS / EmuELEC / JELOS /
+Miyoo / REGLinux / ROCKNIX / TrimUI / UnofficialOS / knulli / muOS / spruce 和一个空名
+`mod_.txt`），所以 `PortMaster.sh:20` 的
+`[ -f "${controlfolder}/mod_${CFW_NAME}.txt" ] && source ...` 是空操作 —— 少了一层别的 CFW
+会带进来的目录/路径改写，这反而更干净。
 
 **2. SDL 映射行。** 上游数据库里这条 GUID 一行都没有（实测 0 行），所以
 `overlay/gamecontrollerdb-r36max2.txt` 带着它：
@@ -92,12 +100,36 @@ Ubuntu base tarball 的 `/etc/hosts` 是**空的**，于是每个程序都刷
 
 | 项 | 状态 |
 | --- | --- |
-| 在这张卡上装一个 port 并跑起来（Apotris） | ✅ DRM 出图、ALSA 有声、摇杆可输入，二进制 114 MB、4 线程。用的是当场手工施加的上面两处修复 |
-| `pugwash` 图形界面完整跑起来 | ❌ 还没验。卡上缺 `libSDL2_image` 的依赖闭包，这一版镜像把三个库交给 apt 装，刷进去之后再验 |
+| 在这张卡上装一个 port 并跑起来（Apotris） | ✅ 2026-10-10 再跑一遍：`r36-port` 起，20 秒窗口内 **0 个 renderer 错误、0 段错误、0 个 E2BIG**，是我们用 `timeout` 把它停下来的（rc=124）。用的正是上面两处修复 |
+| `pugwash` 图形界面完整跑起来 | ✅ 2026-10-10，卡上补齐 `libwebpdemux.so.2` + `libSDL2_gfx` 之后：20 秒窗口 **0 个 DLLWarning、0 个 AttributeError、0 个 Traceback**，harbourmaster 认出的设备是 `{'name': 'ubuntu', 'version': '26.04', 'kernel_version': '7.2.9', 'device': 'xifan r36max2', 'resolution': (1024, 768), 'gpu_driver': 'panfrost', 'primary_arch': 'aarch64', 'ram': 1024, 'glibc': '2.43'}` |
+| 用 `r36-portmaster` 走完整流程（种子解包 → 两处修复 → 起 GUI） | ⚠️ 每一步单独验过，串起来还没在**刷好这一版镜像**的卡上跑过 |
 | 无害噪声 | `Failed to restart oga_events.service: Unit not found` —— `PortMaster.sh:186` 无条件 `$ESUDO systemctl restart oga_events &`，本机没有这个单元。不改上游脚本 |
+| 无害噪声 | `/roms/ports/PortMaster/control.txt: line 72: [: sudo: binary operator expected` —— 上游第 72 行写的是 `[ -z $ESUDO ]`（没引号），而它自己在第 50 行把 `ESUDO` 设成 `sudo --preserve-env=...`（带空格），于是 `[` 收到 3 个参数。走错的分支只是给 RetroArch 系端口准备 `raloc/raconf` 的，本机用不上 |
+| 无害噪声 | `Failed to open PWM: No such file or directory` —— Apotris 自己找的 PWM 节点（蜂鸣/震动）本机没有 |
+
+## 踩过的一个坑：不能在 ES 还占着显示的时候从命令行起 port
+
+这张卡上实测过两次，差别只在 ES 在不在：
+
+| 情况 | 结果 |
+| --- | --- |
+| `r36-es` **active**，SSH 里直接 `r36-port Apotris.sh` | 刷屏 `Failed to create texture: Parameter 'renderer' is invalid`，然后 `Segmentation fault`。SDL 拿不到 DRM master，`SDL_CreateRenderer` 返回 NULL，后面每次建纹理都继承这个 NULL |
+| `systemctl stop r36-es` 之后再跑 | 干净，0 错误 |
+
+**从 ES 里选 port 不会有这个问题**：这个 fork 在游戏启动路径上就先把渲染器放掉了 ——
+`es-app/src/FileData.cpp:718` 读 `HideWindow`，`window->deinit(hideWindow)`，而
+`es-core/src/Settings.cpp:362-366` 的默认值是 `#if defined(_WIN32) || defined(X86) || defined(X86_64)` 才
+false，**交叉到 arm64 就是 true**；`Window::deinit(true)` 里会 `Renderer::deinit()`。
+所以只有"ES 还在前台、你从另一个终端起 port"这种手工测试才会撞上。量帧/量端口记得先
+`systemctl stop r36-es`，测完 `systemctl start r36-es`。
+
+`XDG_RUNTIME_DIR` 不用管：用 `env -i HOME=/root PATH=... SDL_VIDEODRIVER=kmsdrm
+SDL_AUDIODRIVER=alsa` 起 pugwash，0 条 XDG 报错 —— `r36-es.service` 的环境里也只有
+`HOME=/root`。之前那条 "XDG_RUNTIME_DIR is invalid" 是 `sudo` 打的，不是 GUI。
 
 ## 设备上想绕过 GUI 直接装
 
 `harbourmaster` 是随 release 一起的 CLI：`update` / `list` / `install` / `uninstall` /
 `ports` / `device_info` / `runtime_*`。install 的参数形式是 **`[source/]<port>.zip`**
 （不带 `.zip` 会说找不到，这个坑踩过）。
+
