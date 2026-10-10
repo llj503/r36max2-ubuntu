@@ -36,6 +36,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核 
 | 模拟器核（RetroArch + libretro，自编 9 个核 / 8 个可用系统） | ✅ nes·snes·gb·gbc·gba·psx 满速；dreamcast 55–59 fps（基本满速）；saturn 能启动出图但只有 14–15 fps。全部用游戏包里的**真游戏**在板子上两点取斜率量过，DC/SS 还截到了 SEGA 授权画面。第 9 个核 parallel-n64 已编好并装在镜像里，但**第一帧前空指针崩溃**，所以 n64 系统暂时从菜单里摘掉 | [EMULATORS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATORS.md) |
 | 开机自动进 ES + art-book 主题 + 默认音量 50% | ✅ 已进镜像（`r36-es.service`；主题 1614 个文件 + `es_settings.cfg` 选它；`audio.service` 设 128/255 并排在 `alsa-restore` 之后）。实测 50% = **-47.32 dB**，比想象的轻 | [EMULATORS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATORS.md)、[EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
 | 根分区在线扩容 | ✅ | 2 GiB 镜像 → 58 GB，不重启 |
+| PortMaster（社区移植游戏的安装器） | ⚠️ 运行时 pin 进镜像；port 能装能跑（Apotris 在板子上出图、有声、可输入，114 MB / 4 线程），但 `pugwash` 图形界面到这版才把 SDL2 的 ttf/image/gfx 三个库交给 apt 补齐，还没在屏上验过 | [PORTMASTER.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/PORTMASTER.md) |
 | 时间同步 | ✅ | timesyncd + 直接写 IP 的 NTP |
 | 休眠 / 唤醒 | ❌ | 能进 `mem`，但**任何事件都叫不醒**，已 mask |
 | 蓝牙 | ❌ | `hci0: command 0x204b tx timeout`（BT 固件未到位） |
@@ -60,6 +61,7 @@ AIC8800DC USB WiFi），出厂跑 EmuELEC。这里记录的是**用主线内核 
 | 1 GB 内存上编出并跑起 EmulationStation | [EMULATIONSTATION.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATIONSTATION.md) |
 | 模拟器核怎么编、怎么启动、每个系统实测多少帧、BIOS 放哪 | [EMULATORS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATORS.md) |
 | 7.2.8 怎么打上 ROCKNIX 的补丁层、6.12.79 那条线去哪了 | [KERNELS.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KERNELS.md) |
+| PortMaster 装 port 的整条路、这台板子要补的两处、GUI 缺的那三个库 | [PORTMASTER.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/PORTMASTER.md) |
 | 换网络 / 交给别人用（不带凭据的镜像） | [WIFI-AND-SHARING.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md) |
 | 还没解决的问题 | [KNOWN-ISSUES.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/KNOWN-ISSUES.md) |
 | 许可、第三方来源、默认口令风险 | [LICENSING.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/LICENSING.md)、[SECURITY.md](documentation/PER_DEVICE_DOCUMENTATION/r36max2/SECURITY.md) |
