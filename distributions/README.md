@@ -30,25 +30,30 @@
 | `r36max2-ubuntu-v18.img.xz` | `da2a12b30a0bbe4b6a1bc6f48d00f41b8e61ab57f98cf9e690482aade0c71510` |
 | `r36max2-ubuntu-v19.img.xz` | `ea1aa41ea33d56b467d2100c333baf8d6c0f55c7cd00b99b63e56a8d018cb282` |
 | `r36max2-ubuntu-v20.img.xz` | `da46854618144d70b49d47cf54ad7aa81bbf59922636e2670c4cbb2e2f66a143` |
-| `r36max2-ubuntu-v21.img.xz` | `7d5cc138d1aad7b992ba21062f08d877e46453bd054b11f9d5174a29b3362078` |
+| `r36max2-ubuntu-v21.img.xz` | `2ef50cd4f0860bf6a4ca3eacb64d620c7c61747186f143b96012b69b8edd39a6` |
 | `r36max2-ubuntu-26.04.img.xz` | `c0df67ce40f27392d8a9d94a6016754f747a0dd87a3be2e499362bf0d699b64a` |
 | `r36max2-ubuntu-alt-arkosblobs.img.xz` | `360ac81678b1344302844d2e89fea541033692c02577de8a15fb65ad12e968d8` |
 
-**v21 这条哈希（`7d5cc138`，2026-10-09，839669512 B）记的是"当前这棵树产出的镜像"，
-它还没被刷进卡里做首启验证**。里面比上一版多了四样，都是当天实测出来的修复：ES 按
-`type=` 而不是名字找电池、GPU governor 保存函数不再对空列表调 `getSelected()`
-（那个 `rc=134` abort 就是它，也是"改语言存不下去"的直接原因）、35 个 gettext catalog
-加一个非 C 载体 locale、以及启动器先清空 `LC_MESSAGES/LANGUAGE` 再决定语言并在
-`Language` 真的变化时重开 ES。
+**v21 这条哈希（`2ef50cd4`，2026-10-10，865,557,252 B）是"当前这棵树产出的镜像"，还没刷进卡里。**
+它前面那一版 `7d5cc138`（2026-10-09，839,669,512 B）**是刷过也开过机的**：卡上跑的就是它 +
+当场手工应用的 i18n/电量/guard 修复（ES 二进制 sha `b6b968cd`，旧二进制备份在卡上
+`/root/emulationstation.pre-{battery,guard}`），22.6 GB ROM 也拷进去并逐系统抽查过 sha256。
 
-手上那张卡跑的是同一版 v21 镜像 + 当场手工应用的这些修复（ES 二进制 sha `b6b968cd`，
-旧的二进制备份在卡上 `/root/emulationstation.pre-{battery,guard}`）。刷过并开机验证过
-之后再来对这一行。
+这一版比 `7d5cc138` 多的就是 PortMaster 那一层（见
+[PORTMASTER.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/PORTMASTER.md)）：pin 住的
+`PortMaster.zip`（24,131,471 B，sha256 `6e4fa938…`）+ 两个启动器 + ES 的 Ports 入口 +
+这台板子的两处补丁（`fix_control.py`、SDL 映射行），另外 rootfs 里多了 apt 装的
+`libsdl2-ttf/image/gfx` 和 `/etc/hosts`。**打包自检当场把它拦下来过一次**：第一遍
+`cp -a overlay/` 把两处补丁放成了 `/usr/config/PortMaster/overlay/…`（多套一层目录），
+断言直接红，所以这个哈希是修好之后重打的那一份。只读挂载新 .img 复核过：
+`/usr/config/PortMaster/` 恰好是 `fix_control.py`、`gamecontrollerdb-r36max2.txt`、
+`release/PortMaster.zip` 三项，三个 SDL2 扩展库带 soname 符号链接且属 root，
+`libwebpdemux.so.2` 在，`/etc/hosts` 有 `127.0.1.1 r36max2`。
 
-**镜像内容只由配方决定，`scripts/image` 里那些自检不改一个字节**，所以加断言不需要重打；
-这一版是带着断言之前打的，但断言对着它实际跑过一遍（只读挂载那张 .img：launcher 两处标记
-齐全、镜像里的 ES 与 `install_pkg` 逐字节相同 `b6b968cd`、catalog 35、载体 locale 在），
-全绿。
+**镜像内容只由配方决定，`scripts/image` 里那些自检不改一个字节**，所以加断言不需要重打。
+`2ef50cd4` 这一版是**带着全部断言打出来的**（PortMaster 三处、三个 SDL2 扩展库、launcher 两处
+标记、镜像里的 ES 与 `install_pkg` 逐字节相同 `b6b968cd`、catalog 35、载体 locale 在），
+打包当时全绿；上面那些"只读挂载再对一遍"是对着**产物**做的，不是对着构建目录做的。
 
 校验：把镜像和本目录的 `.sha256` 放同一目录后
 
