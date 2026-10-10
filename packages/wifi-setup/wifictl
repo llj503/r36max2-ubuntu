@@ -398,10 +398,25 @@ driver_reset() {
 #     software stack had been asked to reset the chip.
 restore_snapshot() {  # $1 = the ssid whose block was just added and has to go
     err "rolling back to the configuration from before the attempt"
+
     id=$(network_id_for "$1")
     [ -n "$id" ] && $CTL remove_network "$id" >/dev/null 2>&1
+
+    # `select_network` disabled every other network as part of the attempt, and removing the
+    # chosen one does not undo that - so without this loop the rollback would "succeed" and
+    # the supplicant would still refuse to reconnect to anything.  Enabling by id from the
+    # daemon's own list rather than `enable_network all`: the `all` form is newer than the
+    # wpa_cli on this card, and a silently unsupported argument looks identical to a network
+    # that simply will not come back.
+    $CTL list_network 2>/dev/null | awk 'NR > 1 && $1 != "" {print $1}' | while read -r nid; do
+        $CTL enable_network "$nid" >/dev/null 2>&1
+    done
+
     cp -a "$SNAP" "$CONF" 2>/dev/null
     chmod 600 "$CONF" 2>/dev/null
+
+    # One deliberate reconnect, now that the block list is back to what it was.
+    $CTL reassociate >/dev/null 2>&1
 
     i=0
     while [ $i -lt 25 ]; do
