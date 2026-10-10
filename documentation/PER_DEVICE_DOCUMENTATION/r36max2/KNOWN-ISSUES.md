@@ -118,6 +118,19 @@
   （比如同时按两个键产生的中间电压档）；6.12.79 那条线目前跑的还是镜像里自带的整数
   GPIO 版模块，gpiod 版虽然同样能编（同一份源码），但没在 6.12 上重装验证过——
   注意它和新 dtb 的极性是配套的，别只换一半。
+- **镜像里有一批"root 会执行、但属主是 `ubuntu`"的文件**（2026-10-10 在刷好的卡上实测）：
+  `scripts/install` 的合并是 `tar -cf - | sudo tar -xf -`，root 解包时**按归档里记的属主**恢复，
+  而归档里的属主是构建用户（uid 1000）。`rootfs-apt` 结尾那次 `chown -R root:root` 发生在
+  它自己装完的那一刻，**排在它后面的包**（es-launcher、emulationstation、各 libretro 核、
+  portmaster……）都是之后才合进 `${BUILD}/image/system` 的，所以这些是 uid 1000。卡上量到的数：
+  `/usr/local/bin` 156 个（含 `r36-es`）、`/usr/lib/libretro` 10 个、`/etc/emulationstation` 5 个。
+  而 `r36-es.service` 的 `User=` 是空的（以 root 跑），root 会在开机执行 `/usr/local/bin/r36-es`。
+  现在这不影响使用（`ubuntu` 账户没有口令、也没往它的 authorized_keys 里写东西），但它是一条
+  **本地提权路径**：任何以 `ubuntu` 身份执行的代码都能换掉 root 要跑的二进制。
+  修法是在打包前把系统目录 chown 回 root。两处不能一起扫进去：`/home/ubuntu` **必须**留在
+  `1000:1000`（`scripts/image` 的自检里就有这一条），`/roms` 现在整个是 `ubuntu:ubuntu 755`
+  （实测），改归属前要先定下"往卡里放 ROM 走谁的账号"——我这几轮都是用 `root@` 的 scp 拷的，
+  所以改成 root 拥有不会挡住现有做法，但这是有意的取舍，不是顺手一行，等下一次动打包脚本时一起处理。
 - **卡上装不了任何新包**（2026-10-09 实测）：镜像里的包是 `packages/rk3326/rootfs-apt` 从
   **snapshot.ubuntu.com 的固定时间点**装的，而 `/etc/apt/sources.list` 指向
   `http://archive.ubuntu.com/ubuntu/` 活源。两边已经错开，所以 `apt-get install gdb` 直接
@@ -126,7 +139,11 @@
   时间点。诊断类工具（gdb/strace）因此**不能**指望在板子上现装。
 - **测量 RetroArch 之前必须先停 ES**：两者都要 DRM master，ES 在前台时 RetroArch 会
   `Cannot open video driver` 然后**在自己的错误路径里 SIGSEGV（rc=139）**，看起来像核心崩了。
-  细节与被污染的测量见 [EMULATORS.md](EMULATORS.md)。
+  细节与被污染的测量见 [EMULATORS.md](EMULATORS.md)。**PortMaster 的 port 同一个坑**
+  （2026-10-10 实测）：`r36-es` 还在 active 时从 SSH 起 `r36-port`，刷
+  `Failed to create texture: Parameter 'renderer' is invalid` 然后段错误 —— 从 **ES 菜单里**选
+  port 不会有这问题（这个 fork 在非 x86 上 `HideWindow` 默认 true，启动前会 `Renderer::deinit()`），
+  所以只有手工测试会撞上。见 [PORTMASTER.md](PORTMASTER.md)。
 - **N64（parallel-n64）当前不可用，已从 ES 菜单里摘掉**：核能编出来（aarch64 dynarec 确认在
   二进制里：`new_dynarec.o` + `linkage_arm64.o` + `trampoline_arm64.o`，符号 `new_dynarec_init`），
   但三个真游戏全部在**第一帧之前** SIGSEGV。内核给的寄存器是 **`pc : 0000000000000000`**
