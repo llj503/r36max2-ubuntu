@@ -46,7 +46,12 @@ makeinstall_target() {
 
   # What the upstream release does not know about this board; r36-portmaster applies
   # both to the unzipped control folder on every start.
-  cp -a ${PKG_DIR}/overlay/ ${INSTALL}/usr/config/PortMaster/
+  # `overlay/.` and not `overlay/`: the destination directory already exists by now
+  # (the release zip went into .../PortMaster/release one line above), and `cp -a` of a
+  # trailing-slash directory into an existing directory copies the DIRECTORY, which put
+  # both files under .../PortMaster/overlay/ where nothing looks for them.  The pack
+  # self-check is what caught it.
+  cp -a ${PKG_DIR}/overlay/. ${INSTALL}/usr/config/PortMaster/
 
   mkdir -p ${INSTALL}/usr/local/bin
   cp ${PKG_DIR}/scripts/r36-portmaster ${INSTALL}/usr/local/bin/r36-portmaster

@@ -583,6 +583,16 @@ for f in gamecontrollerdb-r36max2.txt fix_control.py; do
     || { v "  !! /usr/config/PortMaster/$f missing - ports would fail with 'Argument list too long'"; fail=1; }
 done
 v "  PortMaster: pinned release zip, both launchers, the ES entry, and the two board fixes"
+# PortMaster's GUI (pugwash) dlopens the SDL2 extension libraries through PySDL2, and a
+# missing one does not raise: PySDL2 simply does not create the submodule, so the GUI dies
+# later with `AttributeError: module 'sdl2' has no attribute 'sdlimage'` (measured on the
+# card 2026-10-10).  They come from rootfs-apt, not from this package, which is why the
+# check lives here.
+for so in libSDL2_ttf-2.0.so.0 libSDL2_image-2.0.so.0 libSDL2_gfx-1.0.so.0; do
+  SUDO test -e "${MNT}/root/usr/lib/aarch64-linux-gnu/$so" \
+    || { v "  !! $so missing - PortMaster's GUI would die with 'no attribute sdlimage'"; fail=1; }
+done
+v "  SDL2 extension libraries for the PortMaster GUI: ttf, image, gfx"
 
 # 4. one kernel tree.  A second /lib/modules directory is how a .ko that nothing loads
 #    ends up on a card.
