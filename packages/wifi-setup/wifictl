@@ -34,6 +34,7 @@ IFACE=wlan0
 CONF=/etc/wpa_supplicant/wpa_supplicant-$IFACE.conf
 SVC=r36-wpa@$IFACE.service
 W=/usr/sbin/wpa_cli
+WPA=/usr/sbin/wpa_supplicant
 IW=/usr/sbin/iw
 CTL="$W -i $IFACE"
 COUNTRY_DEFAULT=CN
@@ -161,8 +162,33 @@ publish_tmp() {
         rm -f "$CONF.tmp"
         return 1
     fi
+    # Gate, not decoration: a network block that does not parse makes wpa_supplicant reject
+    # the WHOLE file and exit (measured: "Line 8: invalid key_mgmt 'WPA2-PSK'" -> "Failed to
+    # read or parse configuration" -> status=255), so one bad block takes every other
+    # network down with it. That is exactly how this card lost its working connection for
+    # two minutes the first time this script was tried on it.
+    if ! validate_conf "$CONF.tmp"; then
+        err "refusing to install a configuration wpa_supplicant cannot parse; the current one is unchanged"
+        rm -f "$CONF.tmp"
+        return 1
+    fi
     chmod 600 "$CONF.tmp"
     mv -f "$CONF.tmp" "$CONF" || { err "could not install $CONF"; rm -f "$CONF.tmp"; return 1; }
+}
+
+# Run a throwaway wpa_supplicant over the candidate file with a non-existent interface and
+# read what it complains about. `-O` is what makes this safe: without it the probe instance
+# would take the control interface directory from the file itself. Verified afterwards that
+# /run/wpa_supplicant still held only wlan0 + p2p-dev-wlan0 and the live link was undisturbed.
+validate_conf() {  # $1 = candidate file
+    mkdir -p /run/wifictl-probe 2>/dev/null
+    out=$(timeout 8 "$WPA" -c"$1" -D nl80211 -i wifictl-probe0 -O /run/wifictl-probe -dd 2>&1)
+    rm -rf /run/wifictl-probe
+    if printf '%s\n' "$out" | grep -qE 'invalid|failed to parse|Failed to read or parse'; then
+        printf '%s\n' "$out" | grep -E 'invalid|failed to parse' | head -3 | sed 's/^/wifictl: /' >&2
+        return 1
+    fi
+    return 0
 }
 
 current_country() { awk -F= '/^country=/{print $2; exit}' "$CONF" 2>/dev/null; }
@@ -171,6 +197,10 @@ current_country() { awk -F= '/^country=/{print $2; exit}' "$CONF" 2>/dev/null; }
 wpa_quote() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
 # PSK *and* SAE are offered, which is what lets a WPA3-Personal network connect from here.
+# The token list is measured, not guessed: `WPA2-PSK` is a hostapd word and wpa_supplicant
+# rejects it ("Line 8: invalid key_mgmt 'WPA2-PSK'" -> the whole file is refused), while
+# `WPA-PSK` already covers both WPA and WPA2 personal - a probe run reported key_mgmt=0x402,
+# i.e. WPA-PSK|SAE, for this combination.
 # That is also why the passphrase is stored quoted rather than as the PBKDF2 hex the
 # wifi.txt channel writes: SAE is a handshake over the password itself, so a pre-hashed PSK
 # cannot be used for it. Mode 600, root only, and it is never copied onto the FAT partition.
@@ -178,7 +208,7 @@ build_block() {  # $1 = ssid, $2 = psk ("" for an open network)
     s=$(wpa_quote "$1")
     if [ -n "$2" ]; then
         p=$(wpa_quote "$2")
-        printf 'network={\n\tssid="%s"\n\tpsk="%s"\n\tkey_mgmt=WPA-PSK WPA2-PSK SAE\n\tproto=WPA RSN\n\tieee80211w=1\n}' "$s" "$p"
+        printf 'network={\n\tssid="%s"\n\tpsk="%s"\n\tkey_mgmt=WPA-PSK SAE\n\tproto=WPA RSN\n\tieee80211w=1\n}' "$s" "$p"
     else
         printf 'network={\n\tssid="%s"\n\tkey_mgmt=NONE\n}' "$s"
     fi
