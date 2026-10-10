@@ -38,6 +38,12 @@
 它前面那一版 `7d5cc138`（2026-10-09，839,669,512 B）**是刷过也开过机的**：卡上跑的就是它 +
 当场手工应用的 i18n/电量/guard 修复（ES 二进制 sha `b6b968cd`，旧二进制备份在卡上
 `/root/emulationstation.pre-{battery,guard}`），22.6 GB ROM 也拷进去并逐系统抽查过 sha256。
+决定是**不为了 PortMaster 再刷一次**（刷一次就抹掉那 22.6 GB），PortMaster 层在卡上当场补齐了：
+缺的四个包 `libsdl2-ttf-2.0-0 / libsdl2-image-2.0-0 / libsdl2-gfx-1.0-0 / libwebpdemux2`
+用构建机从同一快照下好的那批 deb `dpkg -i` 装进去，装完 `dpkg -C` 干净、四个 `.so` 与
+`target/r36max2-ubuntu-v21.img` 里的**逐字节相同**（4/4 sha256 一致）。所以卡与这一版的差异只剩
+"文件是谁装的"，功能面已经对齐。为什么不能 `apt-get install`（它会顺手升 `libblkid1`、撞上
+`util-linux` 的精确 PreDepends）见 [KNOWN-ISSUES.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/KNOWN-ISSUES.md)。
 
 这一版比 `7d5cc138` 多的就是 PortMaster 那一层（见
 [PORTMASTER.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/PORTMASTER.md)）：pin 住的

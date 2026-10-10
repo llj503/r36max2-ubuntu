@@ -131,12 +131,22 @@
   `1000:1000`（`scripts/image` 的自检里就有这一条），`/roms` 现在整个是 `ubuntu:ubuntu 755`
   （实测），改归属前要先定下"往卡里放 ROM 走谁的账号"——我这几轮都是用 `root@` 的 scp 拷的，
   所以改成 root 拥有不会挡住现有做法，但这是有意的取舍，不是顺手一行，等下一次动打包脚本时一起处理。
-- **卡上装不了任何新包**（2026-10-09 实测）：镜像里的包是 `packages/rk3326/rootfs-apt` 从
-  **snapshot.ubuntu.com 的固定时间点**装的，而 `/etc/apt/sources.list` 指向
+- **卡上装不了任何新包**（2026-10-09 实测，2026-10-10 把原因量出来了）：镜像里的包是
+  `packages/rk3326/rootfs-apt` 从 **snapshot.ubuntu.com 的固定时间点**装的，而
+  `/etc/apt/sources.list` 与 `/etc/apt/sources.list.d/ubuntu.sources` 指向
   `http://archive.ubuntu.com/ubuntu/` 活源。两边已经错开，所以 `apt-get install gdb` 直接
   `E: Unmet dependencies`（`dpkg -C` 平时是干净的，只有装新包时才暴露）。这不是镜像坏了，是
-  **可复现构建的代价**：想要额外工具就得在这里改配方重编，或者临时把 sources 换成同一个快照
-  时间点。诊断类工具（gdb/strace）因此**不能**指望在板子上现装。
+  **可复现构建的代价**。
+  10-10 又量到一层：**就算把 sources 临时换成构建用的那个快照时间点，`apt-get install` 仍然会失败**
+  —— 报的是 `util-linux : PreDepends: libblkid1 (= 2.41.3-3ubuntu2) but 2.41.3-3ubuntu2.2 is to be
+  installed`，也就是 apt 想把 `libblkid1` 升到快照里 `-updates` 的那版，而装着的 `util-linux` 要的是
+  **精确等号**版本。快照本身不动，但 `resolute-updates` 组件在 `20261001T000000Z` 这份里就有 .2，
+  基础闭合却是在 .0 上解出来的 —— 是 apt 的"顺手升级"和 dpkg 数据库里那个精确依赖打架。
+  **能用的办法**：走镜像自己那条路，`dpkg -i` 装构建机上下好的那批 deb
+  （`${BUILD}/.rootfs-apt-aptroot/var/cache/apt/archives/`），它不重新解依赖、不碰别的包。
+  10-10 给卡补 `libsdl2-ttf/image/gfx + libwebpdemux2` 四个包就是这么装的，装完 `dpkg -C` 干净、
+  四个 `.so` 与 `target/r36max2-ubuntu-v21.img` 里的**逐字节相同**（4/4 sha256 一致）。
+  诊断类工具（gdb/strace）同理：要么改配方重编镜像，要么从构建机上同一批 deb 里 `dpkg -i`。
 - **测量 RetroArch 之前必须先停 ES**：两者都要 DRM master，ES 在前台时 RetroArch 会
   `Cannot open video driver` 然后**在自己的错误路径里 SIGSEGV（rc=139）**，看起来像核心崩了。
   细节与被污染的测量见 [EMULATORS.md](EMULATORS.md)。**PortMaster 的 port 同一个坑**

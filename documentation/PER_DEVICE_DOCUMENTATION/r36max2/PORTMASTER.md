@@ -100,9 +100,10 @@ Ubuntu base tarball 的 `/etc/hosts` 是**空的**，于是每个程序都刷
 
 | 项 | 状态 |
 | --- | --- |
-| 在这张卡上装一个 port 并跑起来（Apotris） | ✅ 2026-10-10 再跑一遍：`r36-port` 起，20 秒窗口内 **0 个 renderer 错误、0 段错误、0 个 E2BIG**，是我们用 `timeout` 把它停下来的（rc=124）。用的正是上面两处修复 |
-| `pugwash` 图形界面完整跑起来 | ✅ 2026-10-10，卡上补齐 `libwebpdemux.so.2` + `libSDL2_gfx` 之后：20 秒窗口 **0 个 DLLWarning、0 个 AttributeError、0 个 Traceback**，harbourmaster 认出的设备是 `{'name': 'ubuntu', 'version': '26.04', 'kernel_version': '7.2.9', 'device': 'xifan r36max2', 'resolution': (1024, 768), 'gpu_driver': 'panfrost', 'primary_arch': 'aarch64', 'ram': 1024, 'glibc': '2.43'}` |
-| 用 `r36-portmaster` 走完整流程（种子解包 → 两处修复 → 起 GUI） | ⚠️ 每一步单独验过，串起来还没在**刷好这一版镜像**的卡上跑过 |
+| 在这张卡上装一个 port 并跑起来（Apotris） | ✅ 2026-10-10 跑了两遍（第二遍是在四个库改成 dpkg 装的之后）：`r36-port` 起，窗口内 **0 个 renderer 错误、0 段错误、0 个 E2BIG**，两次都是 `timeout` 停掉的（rc=124）。用的正是上面两处修复 |
+| `pugwash` 图形界面完整跑起来 | ✅ 2026-10-10，**0 个 DLLWarning、0 个 AttributeError、0 个 Traceback**，harbourmaster 认出的设备是 `{'name': 'ubuntu', 'version': '26.04', 'kernel_version': '7.2.9', 'device': 'xifan r36max2', 'resolution': (1024, 768), 'gpu_driver': 'panfrost', 'primary_arch': 'aarch64', 'ram': 1024, 'glibc': '2.43'}`。这张卡上那四个库是用构建机下好的同一批 deb `dpkg -i` 补的（`apt-get install` 在卡上会撞上 `util-linux` 的精确 PreDepends，见 KNOWN-ISSUES），装完 `.so` 与新镜像里的**逐字节相同** |
+| 用 `r36-portmaster` 走完整流程（种子解包 → 每次启动重施两处修复 → 起 GUI） | ⚠️ 每一步单独验过，`r36-portmaster` 这个入口串起来也跑过，但**是在手工补的卡上**；`2ef50cd4` 那一版镜像还没刷进卡 |
+| 第一次起 GUI 时的一条抓取失败 | `harbourmaster.util:fetch - Failed to download 'https://api.github.com/repos/PortsMaster/PortMaster-Info/git/trees/main?recursive=1'` —— 当场复查：同一个 URL 返回 **http=200、total=0.96 s、`x-ratelimit-remaining: 50`**（未登录限额 60/小时）。所以是**一次瞬时限流/抖动**，不是这台机的问题；port 索引要靠这条线，装不上 port 时先量它而不是先改镜像 |
 | 无害噪声 | `Failed to restart oga_events.service: Unit not found` —— `PortMaster.sh:186` 无条件 `$ESUDO systemctl restart oga_events &`，本机没有这个单元。不改上游脚本 |
 | 无害噪声 | `/roms/ports/PortMaster/control.txt: line 72: [: sudo: binary operator expected` —— 上游第 72 行写的是 `[ -z $ESUDO ]`（没引号），而它自己在第 50 行把 `ESUDO` 设成 `sudo --preserve-env=...`（带空格），于是 `[` 收到 3 个参数。走错的分支只是给 RetroArch 系端口准备 `raloc/raconf` 的，本机用不上 |
 | 无害噪声 | `Failed to open PWM: No such file or directory` —— Apotris 自己找的 PWM 节点（蜂鸣/震动）本机没有 |
