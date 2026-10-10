@@ -1,0 +1,38 @@
+--- a/locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po	2026-09-29 06:21:43.000000000 +0800
++++ b/locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po	2026-10-10 11:42:11.277295691 +0800
+@@ -7362,3 +7362,35 @@
+ #~ msgctxt "game_options"
+ #~ msgid "Joystick"
+ #~ msgstr "摇杆"
++
++# r36max2: these msgids exist in GuiWifi.cpp but zh_CN upstream never translated
++# them; the build regenerates the pot with xgettext and msgmerges every po against
++# it, which is what adds them empty here. Filled so the Wi-Fi menu is Chinese like
++# the rest of this UI.
++msgid "WI-FI NETWORKS"
++msgstr "Wi-Fi 网络"
++
++msgid "SAVED"
++msgstr "已保存"
++
++msgid "NETWORK OPTIONS FOR: "
++msgstr "网络选项："
++
++msgid "NETWORK FORGOTTEN"
++msgstr "已忘记该网络"
++
++msgid "CONNECTING..."
++msgstr "正在连接…"
++
++msgid "FAILED TO CONNECT"
++msgstr "连接失败"
++
++msgid "WI-FI KEY FOR "
++msgstr "Wi-Fi 密钥："
++
++msgid "ENTER WI-FI SSID"
++msgstr "输入 Wi-Fi 名称"
++
++msgid "CONNECTED SUCCESSFULLY"
++msgstr "连接成功"
++

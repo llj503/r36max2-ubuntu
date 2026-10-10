@@ -82,7 +82,20 @@ status() {   # $1 = text; write it back to the card so Windows can read it
 }
 
 scan_list() {
-    iw dev wlan0 scan 2>/dev/null | awk '/^SSID:/{sub(/^SSID: */,""); print "  " $0}' | head -25
+    # `iw dev wlan0 scan` cannot be used here: measured on the card it fails with
+    # "command failed: Device or resource busy (-16)" while wpa_supplicant holds the
+    # interface, which is why this branch has always printed an empty neighbour list. The
+    # supplicant's own scan is the one that works, so ask it and read its table back.
+    # (`wpa_cli scan` returns in ~40 ms; the results land up to a second later.)
+    if [ -S "/run/wpa_supplicant/wlan0" ]; then
+        wpa_cli -i wlan0 scan >/dev/null 2>&1
+        sleep 3
+        wpa_cli -i wlan0 scan_results 2>/dev/null | tail -n +2 |
+            awk -F'\t' 'NF >= 5 && $5 !~ /^[ \t]*$/ {print "  " $5 "  [" $4 "] " $2 "MHz " $3 "dBm"}' |
+            head -25
+    else
+        iw dev wlan0 scan 2>/dev/null | awk '/^SSID:/{sub(/^SSID: */,""); print "  " $0}' | head -25
+    fi
 }
 
 if [ -z "$SSID" ]; then

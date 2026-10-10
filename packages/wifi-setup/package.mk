@@ -27,4 +27,10 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/etc/systemd/system/multi-user.target.wants
     ln -sf /usr/lib/systemd/system/r36-wpa@.service \
       ${INSTALL}/etc/systemd/system/multi-user.target.wants/r36-wpa@wlan0.service
+
+  # ES's Wi-Fi menu.  The directory is not a style choice: ApiSystem::
+  # isScriptingSupported(ApiSystem::WIFI) tests the literal path "/usr/bin/" + "wifictl",
+  # so anywhere else and the menu entry is never added, however well the script works.
+  # See packages/wifi-setup/wifictl for the subcommand contract it implements.
+  install -m 755 ${PKG_DIR}/wifictl ${INSTALL}/usr/bin/wifictl
 }

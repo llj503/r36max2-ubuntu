@@ -594,6 +594,18 @@ for so in libSDL2_ttf-2.0.so.0 libSDL2_image-2.0.so.0 libSDL2_gfx-1.0.so.0; do
 done
 v "  SDL2 extension libraries for the PortMaster GUI: ttf, image, gfx"
 
+# ES's Wi-Fi menu is compiled in but its entry is gated on the existence of one file:
+# ApiSystem::isScriptingSupported(WIFI) tests the literal "/usr/bin/wifictl", so this is
+# not a "the command is a bit broken" check - without that exact path the menu entry does
+# not appear at all, and there is no error anywhere to say so.
+SUDO test -x "${MNT}/root/usr/bin/wifictl" \
+  || { v "  !! /usr/bin/wifictl missing - ES would show no Wi-Fi menu"; fail=1; }
+for sub in list scanlist list_saved connect connect_saved forget_saved enable disable has_ap_mode channels; do
+  SUDO grep -q "^    $sub)" "${MNT}/root/usr/bin/wifictl" \
+    || { v "  !! wifictl does not implement '$sub' - the ES call that uses it would exit 2"; fail=1; }
+done
+v "  Wi-Fi menu: /usr/bin/wifictl with the subcommands ApiSystem.cpp calls"
+
 # 4. one kernel tree.  A second /lib/modules directory is how a .ko that nothing loads
 #    ends up on a card.
 trees=$(SUDO ls "${MNT}/root/lib/modules" 2>/dev/null | tr '\n' ' ')

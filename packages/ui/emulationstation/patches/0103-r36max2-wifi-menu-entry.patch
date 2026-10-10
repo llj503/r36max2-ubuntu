@@ -1,0 +1,25 @@
+--- a/es-app/src/guis/GuiMenu.cpp	2026-09-29 06:21:43.000000000 +0800
++++ b/es-app/src/guis/GuiMenu.cpp	2026-10-10 11:42:11.254179070 +0800
+@@ -192,6 +192,22 @@
+ 		addEntry(_("SOUND SETTINGS").c_str(), true, [this] { openSoundSettings(); }, "iconSound");
+ 		addEntry(_("GAME COLLECTION SETTINGS").c_str(), true, [this] { openCollectionSystemSettings(); }, "iconAdvanced");
+ 
++		// r36max2: the fork's own NETWORK SETTINGS entry at the top of this function is
++		// inside `#if defined(BATOCERA) || defined(ROCKNIX)`, and this build has both
++		// options OFF, so the whole Wi-Fi GUI (es-app/src/guis/GuiWifi.cpp, compiled
++		// unconditionally) was unreachable. Flipping either option is not an option
++		// either: ROCKNIX=ON wants /etc/profile.d/099-freqfunctions, which this rootfs
++		// does not ship - that empty list is what patches/0102 had to guard - and
++		// BATOCERA=ON routes menus at batocera-* / rocknix-* executables. So: open
++		// GuiWifi directly and skip openNetworkSettings(), whose page also toggles
++		// sshd, samba, a simple HTTP server, syncthing, rclone and wireguard, none of
++		// which exist here. isScriptingSupported(WIFI) is the fork's own test for
++		// /usr/bin/wifictl, so the entry disappears with that file.
++		if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::WIFI))
++			addEntry(_("WI-FI NETWORKS").c_str(), true,
++				[this] { mWindow->pushGui(new GuiWifi(mWindow, _("WI-FI NETWORKS"))); },
++				"iconNetwork");
++
+ 		if (!ApiSystem::getInstance()->isScriptingSupported(ApiSystem::GAMESETTINGS))
+ 		{
+ 			for (auto system : SystemData::sSystemVector)

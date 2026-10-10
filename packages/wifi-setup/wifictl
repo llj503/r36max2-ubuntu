@@ -1,0 +1,331 @@
+#!/bin/sh
+# wifictl - the WiFi backend EmulationStation's network menu talks to.
+#
+# ES knows nothing about this board's WiFi. It shells out to exactly one program and
+# nothing else: every row, marker and failure box in the menu traces back to a
+# `wifictl <subcommand>` here (es-app/src/ApiSystem.cpp: getWifiNetworks ->
+# "wifictl scanlist" / "wifictl list", getSavedWifiNetworks -> "wifictl list_saved",
+# connectSavedWifiNetwork -> "wifictl connect_saved <ssid>", forgetWifiNetwork ->
+# "wifictl forget_saved <ssid>", enableWifi -> "wifictl enable" then
+# "wifictl connect <ssid> <psk> <country>", disableWifi -> "wifictl disable",
+# isWifiAPModeSupported -> "wifictl has_ap_mode"). That is also why this file has to live
+# at /usr/bin/wifictl: isScriptingSupported() tests that literal path, and until it hits,
+# the menu entry is not added at all.
+#
+# Two conventions are obeyed because they were read out of ES, not assumed:
+#   * executeScript() is `system(cmd) == 0`, so a failure has to EXIT non-zero. Printing a
+#     friendly message and exiting 0 tells the user the network connected.
+#   * executeEnumerationScript() turns each stdout line into one menu row through
+#     `strtok(line, "\n")`, so a blank line becomes a selectable blank network. The
+#     enumeration commands below never print an empty line.
+#
+# The store is the same file BOOT:\wifi.txt feeds
+# (/etc/wpa_supplicant/wpa_supplicant-wlan0.conf), because r36-wpa@wlan0.service reads only
+# that path - a network added from the menu is therefore an ordinary saved network, and it
+# survives a reboot. The reverse is worth knowing: wifi.txt is *declarative*, editing it
+# rewrites the whole file, so it replaces everything the menu had added.
+#
+# Scanning goes through the supplicant, never through `iw`: measured on this board that
+# `iw dev wlan0 scan` fails with "Device or resource busy (-16)" while wpa_supplicant holds
+# the interface, which is also why wifi-status.txt's neighbour list came out empty.
+set -u
+
+IFACE=wlan0
+CONF=/etc/wpa_supplicant/wpa_supplicant-$IFACE.conf
+SVC=r36-wpa@$IFACE.service
+W=/usr/sbin/wpa_cli
+IW=/usr/sbin/iw
+CTL="$W -i $IFACE"
+COUNTRY_DEFAULT=CN
+
+err() { echo "wifictl: $*" >&2; }
+
+# --- supplicant lifecycle --------------------------------------------------------
+
+supplicant_up() { [ -S "/run/wpa_supplicant/$IFACE" ]; }
+
+start_supplicant() {
+    supplicant_up && return 0
+    systemctl start "$SVC" 2>/dev/null
+    i=0
+    while [ $i -lt 20 ]; do
+        supplicant_up && return 0
+        sleep 1
+        i=$((i + 1))
+    done
+    err "$IFACE control interface never appeared"
+    return 1
+}
+
+wpa_state() { $CTL status 2>/dev/null | awk -F= '/^wpa_state=/{print $2}'; }
+
+wait_associated() {  # $1 = seconds
+    i=0
+    while [ $i -lt "${1:-40}" ]; do
+        [ "$(wpa_state)" = COMPLETED ] && return 0
+        sleep 1
+        i=$((i + 1))
+    done
+    return 1
+}
+
+has_ipv4() { ip -4 -br addr show "$IFACE" 2>/dev/null | awk '{print $3}' | grep -q '[0-9]\+\.'; }
+
+ensure_lease() {
+    has_ipv4 && return 0
+    networkctl reconfigure "$IFACE" 2>/dev/null
+    i=0
+    while [ $i -lt 15 ]; do
+        has_ipv4 && return 0
+        sleep 1
+        i=$((i + 1))
+    done
+    err "associated, but no IPv4 lease came up"
+    return 1
+}
+
+# --- config file surgery (mawk only - this card has no gawk) ----------------------
+
+# Rewrite $CONF: fresh globals, the block for $2 (unless $3 says open/no-passphrase), and
+# every block already in the file EXCEPT one whose ssid equals $2. Line-oriented on
+# purpose - a block is only a few lines and matching across newlines in mawk is a trap.
+put_network() {  # $1 = ssid, $2 = block text, $3 = country
+    {
+        printf 'ctrl_interface=DIR=/run/wpa_supplicant GROUP=netdev\n'
+        printf 'update_config=1\n'
+        printf 'country=%s\n' "$3"
+        keep_other_blocks "$1"
+        printf '%s\n' "$2"
+    } > "$CONF.tmp"
+    publish_tmp || return 1
+}
+
+remove_network() {  # $1 = ssid, $2 = country
+    {
+        printf 'ctrl_interface=DIR=/run/wpa_supplicant GROUP=netdev\n'
+        printf 'update_config=1\n'
+        printf 'country=%s\n' "$2"
+        keep_other_blocks "$1"
+    } > "$CONF.tmp"
+    publish_tmp || return 1
+}
+
+# Copy every network block except $1's out of $CONF.
+keep_other_blocks() {
+    awk -v drop="$1" '
+        /^network=[{]/ { inb = 1; hold = $0 "\n"; ismatch = 0; next }
+        inb == 1 {
+            hold = hold $0 "\n"
+            if (ismatch == 0 && $0 ~ /ssid=/) {
+                s = $0
+                sub(/^[ \t]*ssid=[ \t]*/, "", s)
+                sub(/[ \t]*$/, "", s)
+                sub(/^"/, "", s)
+                sub(/"$/, "", s)
+                gsub(/\\"/, "\"", s)
+                gsub(/\\\\/, "\\", s)
+                if (s == drop) ismatch = 1
+            }
+            if ($0 ~ /^\}/) {
+                if (!ismatch) printf "%s", hold
+                inb = 0; hold = ""; ismatch = 0
+            }
+            next
+        }
+        inb == 0 && !/^ctrl_interface=/ && !/^update_config=/ && !/^country=/ { print }
+    ' "$CONF" 2>/dev/null
+}
+
+publish_tmp() {
+    if [ ! -s "$CONF.tmp" ]; then
+        err "could not build the configuration"
+        rm -f "$CONF.tmp"
+        return 1
+    fi
+    chmod 600 "$CONF.tmp"
+    mv -f "$CONF.tmp" "$CONF" || { err "could not install $CONF"; rm -f "$CONF.tmp"; return 1; }
+}
+
+current_country() { awk -F= '/^country=/{print $2; exit}' "$CONF" 2>/dev/null; }
+
+# wpa_supplicant's own escaping inside a quoted string value.
+wpa_quote() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+# PSK *and* SAE are offered, which is what lets a WPA3-Personal network connect from here.
+# That is also why the passphrase is stored quoted rather than as the PBKDF2 hex the
+# wifi.txt channel writes: SAE is a handshake over the password itself, so a pre-hashed PSK
+# cannot be used for it. Mode 600, root only, and it is never copied onto the FAT partition.
+build_block() {  # $1 = ssid, $2 = psk ("" for an open network)
+    s=$(wpa_quote "$1")
+    if [ -n "$2" ]; then
+        p=$(wpa_quote "$2")
+        printf 'network={\n\tssid="%s"\n\tpsk="%s"\n\tkey_mgmt=WPA-PSK WPA2-PSK SAE\n\tproto=WPA RSN\n\tieee80211w=1\n}' "$s" "$p"
+    else
+        printf 'network={\n\tssid="%s"\n\tkey_mgmt=NONE\n}' "$s"
+    fi
+}
+
+network_id_for() {  # $1 = ssid -> its runtime network id, or nothing
+    $CTL list_network 2>/dev/null | awk -F'\t' -v want="$1" '
+        NR > 1 && $2 != "" && $2 == want { print $1; exit }'
+}
+
+# --- enumeration -----------------------------------------------------------------
+
+scan_rows() {
+    $CTL scan_results 2>/dev/null | awk -F'\t' '
+        NR == 1 { next }                    # "bssid / frequency / signal level / flags / ssid"
+        NF < 5  { next }
+        {
+            ssid = $5
+            for (i = 6; i <= NF; i++) ssid = ssid " " $i     # SSIDs contain spaces
+            if (ssid ~ /^[ \t]*$/) next                       # hidden network
+            if (!(ssid in seen)) { seen[ssid] = 1; print ssid }
+        }'
+}
+
+rows_now() { $CTL scan_results 2>/dev/null | tail -n +2 | grep -c .; }
+
+cmd_list() {
+    supplicant_up || start_supplicant || return 0
+    scan_rows
+}
+
+cmd_scanlist() {
+    start_supplicant || return 1
+    # `wpa_cli scan` returns in about 40 ms and the results land up to a second later, so
+    # wait for the table to stop growing instead of trusting the return code.
+    $CTL scan >/dev/null 2>&1
+    prev=-1
+    i=0
+    while [ $i -lt 8 ]; do
+        sleep 1
+        now=$(rows_now)
+        [ "$now" = "$prev" ] && [ "$now" -gt 0 ] && break
+        prev=$now
+        i=$((i + 1))
+    done
+    [ "$(rows_now)" -gt 0 ] || err "the scan returned nothing"
+    scan_rows
+}
+
+cmd_list_saved() {
+    [ -r "$CONF" ] || return 0
+    awk '
+        /^network=[{]/ { inb = 1; next }
+        inb == 1 && $0 ~ /ssid=/ {
+            v = $0
+            sub(/^[ \t]*ssid=[ \t]*/, "", v)
+            sub(/[ \t]*$/, "", v)
+            sub(/^"/, "", v)
+            sub(/"$/, "", v)
+            gsub(/\\"/, "\"", v)
+            gsub(/\\\\/, "\\", v)
+            if (v != "") print v
+        }
+        /^\}/ { inb = 0 }
+    ' "$CONF"
+}
+
+# --- the actions ES reports on ---------------------------------------------------
+
+cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
+    ssid=${1:-}
+    psk=${2:-}
+    country=${3:-}
+    [ -n "$country" ] || country=$COUNTRY_DEFAULT
+    [ -n "$ssid" ] || { err "connect: empty SSID"; return 1; }
+    if [ ${#psk} -gt 0 ] && [ ${#psk} -lt 8 ]; then
+        err "connect: a WPA passphrase needs at least 8 characters"
+        return 1
+    fi
+    case "$country" in
+        [A-Z][A-Z]) : ;;
+        *) country=$COUNTRY_DEFAULT ;;
+    esac
+
+    start_supplicant || return 1
+    put_network "$ssid" "$(build_block "$ssid" "$psk")" "$country" || return 1
+    $IW reg set "$country" 2>/dev/null
+
+    # A restart, not `reload_config`: reload keeps the old runtime network ids, and after a
+    # file rewrite those ids no longer match the blocks - which would look exactly like
+    # "it connected to a different saved network".
+    systemctl restart "$SVC" 2>/dev/null
+
+    wait_associated 40 || { err "connect: no association with \"$ssid\""; return 1; }
+    ensure_lease || return 1
+}
+
+cmd_connect_saved() {  # $1 = ssid already present in $CONF
+    ssid=${1:-}
+    [ -n "$ssid" ] || { err "connect_saved: empty SSID"; return 1; }
+    start_supplicant || return 1
+
+    id=$(network_id_for "$ssid")
+    if [ -z "$id" ]; then
+        # saved in the file but not loaded (added while the supplicant was down)
+        systemctl restart "$SVC" 2>/dev/null
+        sleep 2
+        id=$(network_id_for "$ssid")
+    fi
+    [ -n "$id" ] || { err "connect_saved: \"$ssid\" is not saved"; return 1; }
+
+    $CTL enable_network "$id" >/dev/null 2>&1
+    [ "$($CTL select_network "$id" 2>&1)" = FAIL ] && { err "connect_saved: select_network refused"; return 1; }
+    $CTL reassociate >/dev/null 2>&1
+
+    wait_associated 40 || { err "connect_saved: no association with \"$ssid\""; return 1; }
+    ensure_lease || return 1
+}
+
+cmd_forget_saved() {  # $1 = ssid
+    ssid=${1:-}
+    [ -n "$ssid" ] || { err "forget_saved: empty SSID"; return 1; }
+    [ -r "$CONF" ] || return 0
+    c=$(current_country)
+    [ -n "$c" ] || c=$COUNTRY_DEFAULT
+    remove_network "$ssid" "$c" || return 1
+    systemctl restart "$SVC" 2>/dev/null
+}
+
+cmd_enable() {  # optional $1 = ssid, $2 = psk, $3 = country
+    # ES's ENABLE WI-FI row calls this with no arguments; the connect flow that follows it
+    # then calls `connect` with the credentials.
+    rfkill unblock wlan 2>/dev/null
+    start_supplicant || return 1
+    [ "$#" -ge 2 ] || return 0
+    cmd_connect "$1" "$2" "${3:-}"
+}
+
+cmd_disable() {
+    systemctl stop "$SVC" 2>/dev/null
+    rfkill block wlan 2>/dev/null
+}
+
+case "${1:-}" in
+    list)          cmd_list ;;
+    scanlist)      cmd_scanlist ;;
+    list_saved)    cmd_list_saved ;;
+    connect)       shift; cmd_connect "$@" ;;
+    connect_saved) shift; cmd_connect_saved "$@" ;;
+    forget_saved)  shift; cmd_forget_saved "$@" ;;
+    enable)        shift; cmd_enable "$@" ;;
+    disable)       cmd_disable ;;
+    channels)
+        # Nothing in this fork reaches it - getAvailableChannels() has no caller in es-app -
+        # so it stays an empty success instead of inventing a list nobody consumes.
+        ;;
+    has_ap_mode)
+        # Deliberately false. Exiting 0 makes ES add its LOCAL PLAY MODE / ad-hoc switches
+        # (GuiMenu.cpp:5570), and ad-hoc play is not implemented on this image. The chip does
+        # advertise AP mode in `iw phy phy0 info`, which is a different thing from what that
+        # switch turns on.
+        exit 1 ;;
+    "")
+        err "usage: wifictl {list|scanlist|list_saved|connect <ssid> <psk> <country>|connect_saved <ssid>|forget_saved <ssid>|enable [ssid psk country]|disable|has_ap_mode|channels}"
+        exit 2 ;;
+    *)
+        err "unknown subcommand: $1"
+        exit 2 ;;
+esac
