@@ -100,7 +100,8 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 | `wifictl has_ap_mode` | **rc=1** —— 退 0 会让 ES 加上 LOCAL PLAY MODE / ad-hoc 两个开关，这版镜像没有实现那个功能 |
 | `wifictl enable` | rc=0，supplicant 保持 active |
 | `connect <在用的 SSID> <口令> CN` | **rc=0，用时 1 秒**，`wpa_state=COMPLETED`、`key_mgmt=SAE` —— 这张 AIC8800DC 实际跑起了 WPA3-个人（热点是 WPA2-PSK+SAE 混合） |
-| `connect <不存在的 SSID> …` | **rc=1**，报 `still on "…"(COMPLETED) after 40s, not on "…"`；在用网络全程没掉，IP 不变 |
+| `connect <不存在的 SSID> …` | **rc=1**，报 `still on "…"(COMPLETED) after 40s, not on "…"`；在用网络没掉，IP 不变 |
+| `connect <在范围内、但口令错的 SSID>` | **第一版把整台机器弄下线了** —— 见下面"两次真实的失败"。这一行也是为什么上表那句"在用网络全程没掉"只对了一半：不在范围内的 SSID 会被 wpa 立刻放弃，在范围内的会一直重试 |
 | `forget_saved <那条>` | rc=0，conf 从 2 个块变 1 个，只删该删的，链路保持 UP。（第一版在这里重启了服务，实测会让卡"看起来掉线"几秒 —— 改成 `remove_network` + 只重写文件，不重启） |
 | `connect_saved <在用 SSID>` | rc=0、1 秒，`key_mgmt=WPA2-PSK`：选中的是 `wifi.txt` 那条**哈希形式**的块，它做不了 SAE，正好把两条通道的存储差别量出来了 |
 | `connect_saved <没存过的>` | rc=1，`"…" is not saved`，不挂起 |
@@ -121,6 +122,49 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 
 （同一时间日志里出现 14 次 `Unknown help icon "上/下"!`，就在翻菜单那几分钟，之前那份日志
 是 0 次。**没有归因**：看着像中文界面下某个帮助提示在主题里找不到图标，属显示层噪声。）
+
+## 第一次上机就撞出来的事故（用户实测，不是我测出来的）
+
+屏幕上走完"选 `aqk` → 屏幕键盘输密码"之后，**卡从局域网上彻底消失**，而且用户在设备上
+"连接回原来那个网络"也失败。把卡插回电脑、离线挂载读现场，journal 给了完整因果：
+
+```
+14:14:36  CTRL-EVENT-SSID-TEMP-DISABLED id=1 ssid="aqk" auth_failures=3 duration=30 reason=CONN_FAILED
+14:14:49  CTRL-EVENT-SSID-REENABLED id=0 ssid="360JDCWiFi-E378"
+14:14:49  wlan0: Association request to the driver failed        <- 好用的这个也连不上
+14:15:32  wlan0: Association request to the driver failed
+```
+
+ES 侧对上的是这两行：
+
+```
+14:14:46  Error executing wifictl connect_saved 'aqk'
+14:15:30  Error executing wifictl connect_saved '360JDCWiFi-E378'
+```
+
+两件事叠在一起，第二件才是致命的：
+
+1. **口令错但在范围内的网络会把选择卡住**：wpa_supplicant 一直重试它，不自动退回能用的那个；
+   我第一版只等"关联成功"，于是"连接失败"实质等于"没网"。（不在范围内的 SSID 会被立刻放弃，
+   所以我自己那轮测试看不到这个问题 —— 这就是"你的证明在修复不存在时长得一模一样"。）
+2. **反复重启 supplicant 会把 AIC8800DC 弄死**：12 分钟里 4 次 `systemctl restart
+   r36-wpa@wlan0`（每次还配一句 `iw reg set`，它会重启信道），之后驱动对**任何**关联请求都回
+   `Association request to the driver failed` —— 连一整天都好的那个网络也一样。所以只能断电重插。
+
+三个改动，都在 `wifictl` 里：写完 conf 用 `wpa_cli reload_config` 让常驻进程重读文件，
+**不重启服务**（`reload_config` 会按文件重建运行时网络，id 和块仍然对得上 —— 当初"要重启"的
+理由不成立）；失败就把改动前的快照写回去 + `reload_config`，"连接失败"从此意味着"回到你原来
+的网络"；只在国家码真的变化时才 `iw reg set`，并用 `select_network` 明确去连用户点的那个 SSID。
+
+现场处理是离线做的：口令错的那条 `aqk` 块从 conf 里删掉（2 块→1 块，剩下的是原来那条哈希块），
+再把修好的 `wifictl` 装上去；原 conf 备份在构建机 `/root/card-conf.before-aqk-removal`。
+
+**还有一件要记住的事：ES 的 ERROR 行会带整条命令，里面是明文口令。** 上面 `executeScript()`
+那句 INFO 不落盘，但失败时的 `LOG(LogError) << "Error executing " << command` 会，实测卡上
+`/root/.emulationstation/es_log.txt` 里就有 2 行连着 SSID 和口令。文件是 root 0600 目录下的，
+和 FAT 上明文的 `wifi.txt`、菜单写进 conf 的 `psk="…"` 是同一档暴露，没有更大口子 —— 但排查时
+别把这份日志贴到公开场合。（我没改用户的日志文件，只做了计数。）
+
 
 
 
