@@ -88,4 +88,30 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
   现在 `publish_tmp()` 装任何东西之前先用一个不存在的网卡跑一遍 `wpa_supplicant -dd -O`
   当校验器（`-O` 保证它不碰真的控制接口），解析不过就拒绝安装、保持原文件不动。
 
+## 实测状态（2026-10-10）
+
+卡上没有重刷，是把新 ES 二进制 + `zh_CN` catalog + `/usr/bin/wifictl` 直接部署上去，然后
+**按 ES 的调用方式**逐个跑 `wifictl`：
+
+| 调用 | 结果 |
+| --- | --- |
+| `wifictl scanlist` | 2 秒、5 行、**0 个空行**（隐藏 SSID 被跳过；空行在 ES 里会变成一条能点开的空白网络） |
+| `wifictl list` / `list_saved` | 一个给可见网络，一个给 conf 里存的 SSID |
+| `wifictl has_ap_mode` | **rc=1** —— 退 0 会让 ES 加上 LOCAL PLAY MODE / ad-hoc 两个开关，这版镜像没有实现那个功能 |
+| `wifictl enable` | rc=0，supplicant 保持 active |
+| `connect <在用的 SSID> <口令> CN` | **rc=0，用时 1 秒**，`wpa_state=COMPLETED`、`key_mgmt=SAE` —— 这张 AIC8800DC 实际跑起了 WPA3-个人（热点是 WPA2-PSK+SAE 混合） |
+| `connect <不存在的 SSID> …` | **rc=1**，报 `still on "…"(COMPLETED) after 40s, not on "…"`；在用网络全程没掉，IP 不变 |
+| `forget_saved <那条>` | rc=0，conf 从 2 个块变 1 个，只删该删的，链路保持 UP。（第一版在这里重启了服务，实测会让卡"看起来掉线"几秒 —— 改成 `remove_network` + 只重写文件，不重启） |
+| `connect_saved <在用 SSID>` | rc=0、1 秒，`key_mgmt=WPA2-PSK`：选中的是 `wifi.txt` 那条**哈希形式**的块，它做不了 SAE，正好把两条通道的存储差别量出来了 |
+| `connect_saved <没存过的>` | rc=1，`"…" is not saved`，不挂起 |
+| 服务里裸 `wifictl` 找不找得到 | `systemd-run` 实测 `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin` → `/usr/bin/wifictl` ✅（ES 的 enumeration 就是这么调的） |
+
+整套测试跑完，`/etc/wpa_supplicant/wpa_supplicant-wlan0.conf` 与测试前 `cmp` **逐字节相同**。
+
+**还差的一步：菜单本身要用眼睛看。** `/dev/fb0` 抓不到 ES（见
+[EMULATIONSTATION.md](EMULATIONSTATION.md)），上面全是命令行侧的证据；"设置 → Wi-Fi 网络"
+这一行有没有出现、扫描列表和屏幕键盘实不实用，需要实机确认。代码侧的兜底是
+`post_patch()` 里两条 grep：0103/0104 没打上就 `die`，构建过不去。
+
+
 

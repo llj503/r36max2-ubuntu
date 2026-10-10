@@ -332,8 +332,16 @@ cmd_forget_saved() {  # $1 = ssid
     [ -r "$CONF" ] || return 0
     c=$(current_country)
     [ -n "$c" ] || c=$COUNTRY_DEFAULT
+
+    # Drop it from the daemon first, then from the file - and do NOT restart the service.
+    # A restart was the first version here, and measured on the card it left the board
+    # showing "Not connected" for several seconds after a forget that had nothing to do
+    # with the network it was using. remove_network is immediate and per-network; the file
+    # only matters at the next start, which is exactly when it must be gone.
+    id=$(network_id_for "$ssid")
+    [ -n "$id" ] && $CTL remove_network "$id" >/dev/null 2>&1
+
     remove_network "$ssid" "$c" || return 1
-    systemctl restart "$SVC" 2>/dev/null
 }
 
 cmd_enable() {  # optional $1 = ssid, $2 = psk, $3 = country
