@@ -59,13 +59,21 @@ start_supplicant() {
 
 wpa_state() { $CTL status 2>/dev/null | awk -F= '/^wpa_state=/{print $2}'; }
 
-wait_associated() {  # $1 = seconds
+wpa_ssid() { $CTL status 2>/dev/null | awk -F= '/^ssid=/{print $2}'; }
+
+# Wait for THIS ssid, not merely for "some" association: right after a restart the old
+# network is still in the file and still in range, so wpa_state alone goes COMPLETED on the
+# network the user did not ask for, and ES would report the failed connection as a success.
+wait_for_network() {  # $1 = ssid, $2 = seconds
     i=0
-    while [ $i -lt "${1:-40}" ]; do
-        [ "$(wpa_state)" = COMPLETED ] && return 0
+    while [ $i -lt "${2:-40}" ]; do
+        if [ "$(wpa_state)" = COMPLETED ] && [ "$(wpa_ssid)" = "$1" ]; then
+            return 0
+        fi
         sleep 1
         i=$((i + 1))
     done
+    err "still on \"$(wpa_ssid)\" ($(wpa_state)) after ${2:-40}s, not on \"$1\""
     return 1
 }
 
@@ -82,6 +90,17 @@ ensure_lease() {
     done
     err "associated, but no IPv4 lease came up"
     return 1
+}
+
+# Association is the success criterion, not the lease. A wrong passphrase never associates,
+# which is the failure the user is asking about; an association with no lease is an
+# environment problem (static-only network, slow DHCP) and ES's only two answers are
+# "connected successfully" and "failed to connect" - the second would be a lie. The wifi.txt
+# channel reports the same split as "PARTIAL:" in wifi-status.txt.
+connected_ok() {  # $1 = ssid
+    wait_for_network "$1" 40 || return 1
+    ensure_lease || true
+    return 0
 }
 
 # --- config file surgery (mawk only - this card has no gawk) ----------------------
@@ -253,8 +272,7 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
     # "it connected to a different saved network".
     systemctl restart "$SVC" 2>/dev/null
 
-    wait_associated 40 || { err "connect: no association with \"$ssid\""; return 1; }
-    ensure_lease || return 1
+    connected_ok "$ssid" || return 1
 }
 
 cmd_connect_saved() {  # $1 = ssid already present in $CONF
@@ -275,8 +293,7 @@ cmd_connect_saved() {  # $1 = ssid already present in $CONF
     [ "$($CTL select_network "$id" 2>&1)" = FAIL ] && { err "connect_saved: select_network refused"; return 1; }
     $CTL reassociate >/dev/null 2>&1
 
-    wait_associated 40 || { err "connect_saved: no association with \"$ssid\""; return 1; }
-    ensure_lease || return 1
+    connected_ok "$ssid" || return 1
 }
 
 cmd_forget_saved() {  # $1 = ssid
