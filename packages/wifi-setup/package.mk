@@ -32,8 +32,9 @@ makeinstall_target() {
   # isScriptingSupported(ApiSystem::WIFI) tests the literal path "/usr/bin/" + "wifictl",
   # so anywhere else and the menu entry is never added, however well the script works.
   # See packages/wifi-setup/wifictl for the subcommand contract it implements.
-  # (The mkdir is load-bearing: a manual-toolchain package starts from an empty install
-  # tree, and the first run of this line died on "cannot create .../usr/bin/wifictl".)
+  # The mkdir is load-bearing: scripts/build:472-475 pre-creates /usr/local/bin,
+  # /usr/local/sbin and the two systemd directories - not /usr/bin - and GNU install
+  # makes no directories, so the first run died on "cannot create .../usr/bin/wifictl".
   mkdir -p ${INSTALL}/usr/bin
   install -m 755 ${PKG_DIR}/wifictl ${INSTALL}/usr/bin/wifictl
 }
