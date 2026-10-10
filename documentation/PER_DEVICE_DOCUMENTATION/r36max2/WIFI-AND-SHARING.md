@@ -108,10 +108,19 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 
 整套测试跑完，`/etc/wpa_supplicant/wpa_supplicant-wlan0.conf` 与测试前 `cmp` **逐字节相同**。
 
-**还差的一步：菜单本身要用眼睛看。** `/dev/fb0` 抓不到 ES（见
-[EMULATIONSTATION.md](EMULATIONSTATION.md)），上面全是命令行侧的证据；"设置 → Wi-Fi 网络"
-这一行有没有出现、扫描列表和屏幕键盘实不实用，需要实机确认。代码侧的兜底是
-`post_patch()` 里两条 grep：0103/0104 没打上就 `die`，构建过不去。
+**"设置 → Wi-Fi 网络"这一行已经在屏幕上确认**（2026-10-10；卡上跑的是 `7d5cc138` +
+现场部署的 `92272ebc` ES 二进制）。代码侧的兜底仍是 `post_patch()` 里两条 grep：
+0103/0104 没打上就 `die`，构建过不去。
+
+顺便量清一件会影响你日后排查的事：**别指望在 ES 日志里看到"菜单被打开了"。** 这个构建的
+`es_log.txt` 只写 WARNING 和 ERROR（当场统计：115 WARNING、13 ERROR、**0 条 INFO**），而
+`executeScript()` 里那句 `LOG(LogInfo) << "Running wifictl …"` 是 INFO 级，根本不落盘。
+要在设备上判断"连过没有"，看副作用：连过一次之后 `/root/.emulationstation/batocera.conf`
+里会出现 `wifi.ssid=…`（`saveSystemConf()` 写的），并且 conf 里那条块会从哈希形式变成
+`psk="…"` + `key_mgmt=WPA-PSK SAE` 形式。两边都没有 = 只打开过页面、没连过。
+
+（同一时间日志里出现 14 次 `Unknown help icon "上/下"!`，就在翻菜单那几分钟，之前那份日志
+是 0 次。**没有归因**：看着像中文界面下某个帮助提示在主题里找不到图标，属显示层噪声。）
 
 
 
