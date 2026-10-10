@@ -1,0 +1,27 @@
+#!/bin/bash
+# Run one PortMaster port from EmulationStation (es_systems.cfg "ports" -> this).
+#
+# Port scripts assume three things, all cheap to get wrong:
+#   - cwd is the port's own directory (they use $PWD and relative paths, and the
+#     libgl_* helper they source sets LD_LIBRARY_PATH from $PWD/gl4es.<arch>)
+#   - a KMS/DRM video driver, since ES is not holding the console at that moment
+#   - HOME, because they re-derive the PortMaster controlfolder from it
+# ES passes the .sh path; anything else on the command line is forwarded untouched.
+set -uo pipefail
+
+rom="${1:-}"
+[ $# -gt 0 ] && shift
+[ -n "$rom" ] && [ -f "$rom" ] || { echo "usage: r36-port /roms/ports/<port>/<Port>.sh [args...]"; exit 1; }
+
+dir="$(dirname "$rom")"
+base="$(basename "$rom")"
+
+export HOME="${HOME:-/root}"
+export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-kmsdrm}"
+export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
+CONTROL=/roms/ports/PortMaster
+[ -d "$CONTROL" ] && export PATH="$CONTROL:$PATH"
+
+cd "$dir" || { echo "  !! cannot cd to $dir"; exit 1; }
+echo "  port: $base (in $dir)"
+exec bash "./$base" "$@"

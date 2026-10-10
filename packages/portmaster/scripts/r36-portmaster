@@ -1,0 +1,54 @@
+#!/bin/bash
+# Seed the PortMaster runtime into /roms/ports and start it.
+#
+# The image ships only the pinned release archive (/usr/config/PortMaster/release),
+# never an extracted tree: PortMaster rewrites its own control folder when it
+# updates, and a build-time copy of it would just be something to fall out of date.
+# Seeding on first use is also what ROCKNIX does.
+#
+# Where PortMaster looks for itself (PortMaster.sh, first lines):
+#   /opt/system/Tools/PortMaster  ->  /opt/tools/PortMaster
+#   ->  $XDG_DATA_HOME/PortMaster ->  /roms/ports/PortMaster   (the fallback we use)
+# So XDG_DATA_HOME/PortMaster must not exist; the seed below is the only one we create.
+set -euo pipefail
+
+ZIP=/usr/config/PortMaster/release/PortMaster.zip
+CONTROL=/roms/ports/PortMaster
+MASTER="$CONTROL/PortMaster.sh"
+
+if [ ! -x "$MASTER" ]; then
+    [ -f "$ZIP" ] || { echo "  !! $ZIP missing - PortMaster was not installed into the image"; exit 1; }
+    echo "  first run: unpacking PortMaster into /roms/ports/"
+    mkdir -p /roms/ports
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -q -o "$ZIP" -d /roms/ports
+    else
+        # unzip is in the image, but python3 -m zipfile is here for a rootfs without it
+        python3 -m zipfile -e "$ZIP" /roms/ports
+    fi
+    chmod +x "$CONTROL"/*.sh 2>/dev/null || true
+    for b in gptokeyb gptokeyb2 xdelta3 harbourmaster pugwash tasksetter; do
+        [ -f "$CONTROL/$b" ] && chmod +x "$CONTROL/$b"
+    done
+    # tasksetter is a no-op shim upstream uses to defer work; ROCKNIX removes it, and
+    # leaving it in place means ports that call it silently do nothing.
+    rm -rf "$CONTROL/tasksetter" 2>/dev/null || true
+fi
+
+[ -x "$MASTER" ] || { echo "  !! $MASTER still missing after unpacking"; exit 1; }
+
+if [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/PortMaster" ]; then
+    echo "  !! PortMaster will use ${XDG_DATA_HOME:-$HOME/.local/share}/PortMaster, not $CONTROL"
+    echo "     (its controlfolder search stops there); move or delete that directory"
+fi
+
+# Ports are SDL2/KMS apps, same as EmulationStation on this image; when launched from
+# ES these are already set by r36-es, this is for the SSH/console case.
+export HOME="${HOME:-/root}"
+export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-kmsdrm}"
+export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
+export PATH="$CONTROL:$PATH"
+
+echo "  starting PortMaster (its GUI needs the console; exit it to get a shell back)"
+cd "$CONTROL"
+exec bash "$MASTER" "$@"

@@ -15,7 +15,7 @@ PKG_DEPENDS_TARGET="toolchain rootfs-base rootfs-apt \
   gpu-demos busybox initramfs \
   bootlog status-screen wifi-setup expand-root fwswap \
   usb-gadget audio keymapper osk wayland \
-  emulationstation es-launcher es-theme-art-book-next \
+  emulationstation es-launcher es-theme-art-book-next portmaster \
   libretro-fceumm libretro-gambatte libretro-mgba libretro-snes9x2010 libretro-vba-next \
   libretro-pcsx-rearmed libretro-flycast libretro-mednafen-saturn libretro-parallel-n64"
 PKG_SECTION="virtual"

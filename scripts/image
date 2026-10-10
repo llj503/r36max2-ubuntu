@@ -564,6 +564,20 @@ v "  ES binary: image=${img_es:0:16} install_pkg=${pkg_es:0:16}"
 [ -n "${img_es}" ] && [ "${img_es}" = "${pkg_es}" ] \
   || { v "  !! the image did not pick up the emulationstation package's current install"; fail=1; }
 
+# PortMaster ships as a pinned archive that is unpacked on first use, so the pack
+# cannot check the runtime - it can only check that the thing r36-portmaster needs is
+# there.  A missing zip is otherwise invisible until someone selects "Start PortMaster"
+# on the device and it says no.
+SUDO test -f "${MNT}/root/usr/config/PortMaster/release/PortMaster.zip" \
+  || { v "  !! PortMaster release zip missing - r36-portmaster cannot seed /roms/ports"; fail=1; }
+for f in r36-portmaster r36-port; do
+  SUDO test -x "${MNT}/root/usr/local/bin/$f" \
+    || { v "  !! /usr/local/bin/$f missing or not executable"; fail=1; }
+done
+SUDO test -f "${MNT}/root/roms/ports/Start PortMaster.sh" \
+  || { v "  !! /roms/ports/Start PortMaster.sh missing - ES would show an empty Ports system"; fail=1; }
+v "  PortMaster: pinned release zip, both launchers, and the ES entry script"
+
 # 4. one kernel tree.  A second /lib/modules directory is how a .ko that nothing loads
 #    ends up on a card.
 trees=$(SUDO ls "${MNT}/root/lib/modules" 2>/dev/null | tr '\n' ' ')
