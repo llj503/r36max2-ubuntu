@@ -1,0 +1,46 @@
+--- a/es-app/src/guis/GuiWifi.cpp
++++ b/es-app/src/guis/GuiWifi.cpp
+@@ -39,6 +39,43 @@
+ {
+ 	mMenu.clear();
+ 
++	// r36max2: the address this page is responsible for getting.  Patch 0103 opens
++	// GuiWifi directly rather than the fork's openNetworkSettings(), and that page
++	// held the tree's only IP row, so ES's whole answer to a connection was
++	// "CONNECTED SUCCESSFULLY" - and wifictl deliberately does not fail a connect over
++	// a missing lease (association is the criterion; a slow DHCP server is an
++	// environment problem, not a wrong passphrase), which is exactly the case a user
++	// then has no way to see.  load() is the path ES re-enters after both that box and
++	// REFRESH, so the row is current without a poll of its own.  Same branches, theme
++	// font/color and TextComponent as GuiMenu.cpp's INFORMATION group.
++	{
++		auto theme = ThemeData::getMenuTheme();
++		std::shared_ptr<Font> font = theme->Text.font;
++		unsigned int color = theme->Text.color;
++		auto ips = ApiSystem::getInstance()->getIpAddresses();
++
++		if (ips.empty()) {
++			mMenu.addWithLabel(_("IP ADDRESS"), std::make_shared<TextComponent>(mWindow, _("NOT CONNECTED"), font, color));
++		}
++		else if (ips.size() == 1) {
++			mMenu.addWithLabel(_("IP ADDRESS"), std::make_shared<TextComponent>(mWindow, ips[0], font, color));
++		}
++		else {
++			ComponentListRow row;
++			row.addElement(std::make_shared<TextComponent>(mWindow, _("IP ADDRESS"), font, color), true);
++			row.addElement(std::make_shared<TextComponent>(mWindow, ips[0] + " (+)", font, color), false);
++			row.makeAcceptInputHandler([this, ips] {
++				std::string ipList = _("AVAILABLE IP ADDRESSES:\n\n");
++				for (const auto& ip : ips) {
++					ipList += ip + "\n";
++				}
++				ipList.pop_back();
++				mWindow->pushGui(new GuiMsgBox(mWindow, ipList, _("OK"), nullptr));
++			});
++			mMenu.addRow(row);
++		}
++	}
++
+ 	std::vector<std::string> savedNetworks = ApiSystem::getInstance()->getSavedWifiNetworks();
+ 	std::string currentSSID = SystemConf::getInstance()->get("wifi.ssid");
+ 	bool isSystemConnected = ApiSystem::getInstance()->ping();

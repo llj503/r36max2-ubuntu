@@ -132,6 +132,16 @@ post_patch() {
   grep -q 'msgstr "Wi-Fi 网络"' \
     ${PKG_BUILD}/locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po ||
     die "emulationstation: the zh_CN Wi-Fi strings did not apply - that submenu would show English"
+
+  # 0105: an IP ADDRESS row on that same page.  It exists because 0103 opens GuiWifi and
+  # not openNetworkSettings(), and openNetworkSettings() held the tree's only IP row - so
+  # the page could report "CONNECTED SUCCESSFULLY" and never show what address it got,
+  # while wifictl treats association (not a lease) as success.  Nothing crashes if this
+  # goes missing, it just silently loses that feedback, which is why it is asserted here
+  # rather than trusted to the binary still building.
+  grep -q 'r36max2: the address this page is responsible for getting' \
+    ${PKG_BUILD}/es-app/src/guis/GuiWifi.cpp ||
+    die "emulationstation: the Wi-Fi IP row did not apply - the page would show no address after connecting"
 }
 
 makeinstall_target() {
