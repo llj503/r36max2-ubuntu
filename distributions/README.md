@@ -30,17 +30,23 @@
 | `r36max2-ubuntu-v18.img.xz` | `da2a12b30a0bbe4b6a1bc6f48d00f41b8e61ab57f98cf9e690482aade0c71510` |
 | `r36max2-ubuntu-v19.img.xz` | `ea1aa41ea33d56b467d2100c333baf8d6c0f55c7cd00b99b63e56a8d018cb282` |
 | `r36max2-ubuntu-v20.img.xz` | `da46854618144d70b49d47cf54ad7aa81bbf59922636e2670c4cbb2e2f66a143` |
-| `r36max2-ubuntu-v21.img.xz` | `cd4e0362e557cf4f4119cb6fd0007eb7024345192d214a843845617a53ede8b8` |
+| `r36max2-ubuntu-v21.img.xz` | `df1ef545d04fc5edfde2ed56ae1cdc8ca35dd5fabb046721fa2c9006f53498a8` |
 | `r36max2-ubuntu-26.04.img.xz` | `c0df67ce40f27392d8a9d94a6016754f747a0dd87a3be2e499362bf0d699b64a` |
 | `r36max2-ubuntu-alt-arkosblobs.img.xz` | `360ac81678b1344302844d2e89fea541033692c02577de8a15fb65ad12e968d8` |
 
-**v21 这条哈希（`cd4e0362`，2026-10-10 12:25，864,273,292 B）是"当前这棵树产出的镜像"，还没刷进卡里。**
+**v21 这条哈希（`df1ef545`，2026-10-10 14:40，864,549,544 B）是"当前这棵树产出的镜像"，还没刷进卡里。**
 真正刷进卡、开过机的是 `7d5cc138`（2026-10-09，839,669,512 B）：卡上跑的就是它 + 当场手工应用的
-i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256。今天同一天在它之前还打过一版
-`2ef50cd4`（865,557,252 B，只有 PortMaster 那一层），当天就被 `cd4e0362` 取代了 —— 记在这里是为了
-别把"量过的哈希"和"卡在跑的东西"混起来。
+i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256。今天在同一天里 v21 打过四次，
+记下来是为了别把"量过的哈希"和"卡在跑的东西"混起来：
 
-`cd4e0362` 比 `7d5cc138` 多的两层：
+| 哈希 | 时间 | 里面是什么 | 状态 |
+| --- | --- | --- | --- |
+| `7d5cc138` | 10-09 | 电池/guard/i18n 四项修复 | **刷进卡里、开过机** |
+| `2ef50cd4` | 10-10 上午 | + PortMaster 那一层 | 被当天下一版取代 |
+| `cd4e0362` | 10-10 12:25 | + ES 的 Wi-Fi 菜单 | **别刷这一版**：它的 `wifictl` 会重启 supplicant 且失败不回滚，用户第一次在屏幕上实测就把卡弄到完全离线（原因见 [WIFI-AND-SHARING.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md)） |
+| `df1ef545` | 10-10 14:40 | 同上 + `wifictl` 改成 `reload_config` / 失败回滚 / 只在国家码变化时 `iw reg set` | 当前这棵树的产物 |
+
+`df1ef545` 比 `7d5cc138` 多的两层：
 
 * **PortMaster**（见 [PORTMASTER.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/PORTMASTER.md)）：
   pin 住的 `PortMaster.zip`（24,131,471 B，sha256 `6e4fa938…`）+ 两个启动器 + ES 的 Ports 入口 +
@@ -50,26 +56,25 @@ i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256�
   所以这个哈希是修好之后重打的那一份。
 * **ES 的 Wi-Fi 菜单**（见
   [WIFI-AND-SHARING.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md)）：
-  新增 `/usr/bin/wifictl`（15,042 B，755）+ `patches/0103`（把入口加进非 batocera 分支）+
-  `patches/0104`（补 `zh_CN` 九个空串）。因为 ES 二进制变了，镜像里的 ES 从 `b6b968cd` 变成
-  **`92272ebcc0d181c7…`**，自检仍然要求镜像与 `install_pkg` 逐字节相同（这次两边都是 `92272ebc`）。
+  新增 `/usr/bin/wifictl`（17,833 B，755，十个子命令齐）+ `patches/0103`（把入口加进非 batocera
+  分支）+ `patches/0104`（补 `zh_CN` 九个空串）。因为 ES 二进制变了，镜像里的 ES 从 `b6b968cd`
+  变成 **`92272ebcc0d181c7…`**，自检仍然要求镜像与 `install_pkg` 逐字节相同（这次两边都是 `92272ebc`）。
 
 **卡上没有为了这两层重刷**（刷一次就抹掉那 22.6 GB），是照样补齐的：四个缺的包
 `libsdl2-ttf-2.0-0 / libsdl2-image-2.0-0 / libsdl2-gfx-1.0-0 / libwebpdemux2` 用构建机从同一快照
 下好的 deb `dpkg -i` 装的，ES 二进制与 `zh_CN` catalog 直接部署成 `92272ebc` / `604b1021…`
-（两个 sha256 都与 `install_pkg` 相同），`/usr/bin/wifictl` 与镜像里那份同内容。被换下来的原件备份在卡上：
-`/root/emulationstation.pre-wifi`、`/root/emulationstation2.mo.pre-wifi`，改配置前的 conf 在
-`/root/wifi-conf.pre-wifictl2`。所以卡与 `cd4e0362` 的差异只剩"文件是谁装的"。为什么不能
+（两个 sha256 都与 `install_pkg` 相同），`/usr/bin/wifictl` 与镜像里那份 `cmp` 相同。被换下来的原件
+备份在卡上：`/root/emulationstation.pre-wifi`、`/root/emulationstation2.mo.pre-wifi`。为什么不能
 `apt-get install`（它会顺手升 `libblkid1`、撞上 `util-linux` 的精确 PreDepends）见
 [KNOWN-ISSUES.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/KNOWN-ISSUES.md)。
 
-只读挂载 `cd4e0362` 的产物复核过：`/usr/config/PortMaster/` 恰好是 `fix_control.py`、
+只读挂载 `df1ef545` 的产物复核过：`/usr/config/PortMaster/` 恰好是 `fix_control.py`、
 `gamecontrollerdb-r36max2.txt`、`release/PortMaster.zip` 三项，三个 SDL2 扩展库带 soname 符号链接且属
-root，`libwebpdemux.so.2` 在，`/etc/hosts` 有 `127.0.1.1 r36max2`，`/usr/bin/wifictl` 在，
-`zh_CN` catalog 里有"Wi-Fi 网络"。
+root，`libwebpdemux.so.2` 在，`/etc/hosts` 有 `127.0.1.1 r36max2`，`/usr/bin/wifictl` 与仓库副本
+`cmp` 相同（十个子命令、写路径里 0 次 `systemctl restart`），`zh_CN` catalog 里有"Wi-Fi 网络"。
 
 **镜像内容只由配方决定，`scripts/image` 里那些自检不改一个字节**，所以加断言不需要重打。
-`cd4e0362` 是**带着全部断言跑出来的**（PortMaster 四处、三个 SDL2 扩展库、Wi-Fi 菜单的十个子命令、
+`df1ef545` 是**带着全部断言跑出来的**（PortMaster 四处、三个 SDL2 扩展库、Wi-Fi 菜单的十个子命令、
 launcher 两处标记、镜像里的 ES 与 `install_pkg` 逐字节相同、catalog 35、载体 locale 在），
 打包当时全绿；上面那段"只读挂载复核"是对着**产物**做的，不是对着构建目录做的。
 
