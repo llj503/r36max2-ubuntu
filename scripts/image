@@ -606,6 +606,23 @@ for sub in list scanlist list_saved connect connect_saved forget_saved enable di
 done
 v "  Wi-Fi menu: /usr/bin/wifictl with the subcommands ApiSystem.cpp calls"
 
+# The rollback is the code that took this board offline twice, so its two properties are
+# checked instead of trusted: it drops the network it added from the RUNNING daemon
+# (remove_network) and never reload_config - reload re-associates, and one rejected
+# re-association is what the AIC8800DC dies on (WIFI-AND-SHARING.md, the two-boot table).
+SUDO grep -q 'driver_reset()' "${MNT}/root/usr/bin/wifictl" \
+  || { v "  !! wifictl has no driver reset - a wedged chip would mean opening the case"; fail=1; }
+SUDO sed -n '/^restore_snapshot()/,/^}/p' "${MNT}/root/usr/bin/wifictl" \
+  | SUDO grep -q remove_network \
+  || { v "  !! restore_snapshot does not use remove_network - the rollback would re-associate"; fail=1; }
+# And the reset is only real if this image actually ships the modules it unloads.  A missing
+# .ko makes rmmod/modprobe fail quietly, which looks identical to "recovered".
+for ko in aic_load_fw aic8800_fdrv; do
+  SUDO test -e "${MNT}/root/lib/modules/${KVER}/extra/${ko}.ko" \
+    || { v "  !! ${ko}.ko absent - driver_reset could not reload the WiFi driver"; fail=1; }
+done
+v "  Wi-Fi rollback: remove_network path, with both AIC modules present to reset"
+
 # 4. one kernel tree.  A second /lib/modules directory is how a .ko that nothing loads
 #    ends up on a card.
 trees=$(SUDO ls "${MNT}/root/lib/modules" 2>/dev/null | tr '\n' ' ')
