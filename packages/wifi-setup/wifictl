@@ -303,22 +303,19 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
     SNAP=/run/wifictl-connect-snapshot.conf
     cp -a "$CONF" "$SNAP" 2>/dev/null || SNAP=""
 
-    start_supplicant || { [ -z "$SNAP" ] || restore_snapshot; return 1; }
+    start_supplicant || { [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
     put_network "$ssid" "$(build_block "$ssid" "$psk")" "$country" || {
-        [ -z "$SNAP" ] || restore_snapshot; return 1; }
+        [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
 
     # `iw reg set` restarts the channel, and on this chip that is not free. Only touch it
     # when the country is actually changing.
     [ "$(iw_reg_country)" = "$country" ] || $IW reg set "$country" 2>/dev/null
 
-    # Ask the running daemon to re-read the file. NOT `systemctl restart`: four restarts
-    # inside twelve minutes is what left the AIC8800DC refusing every association -
-    #   wlan0: Association request to the driver failed
-    #   wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="360JDCWiFi-E378" reason=CONN_FAILED
-    # including on the network that had worked all day, which is also why the user's own
-    # "connect back to the good one" failed. reload_config is safe here: it rebuilds the
-    # runtime networks from the file, so ids and blocks stay in step (the reason an
-    # earlier version of this function preferred a restart does not apply).
+    # Ask the running daemon to re-read the file. NOT `systemctl restart` - but do not read
+    # that as a cure, because it is not one: the boot that ran with zero restarts still
+    # wedged the chip (34 refused associations in 86 minutes, see driver_reset). Removing the
+    # restart only removed one way of provoking it. reload_config is still the lesser evil
+    # here: it rebuilds the runtime networks from the file, so ids and blocks stay in step.
     $CTL reload_config >/dev/null 2>&1
 
     # Then ask for THAT network by id: without select_network the daemon chooses among the
@@ -330,7 +327,7 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
         $CTL select_network "$id" >/dev/null 2>&1
     fi
 
-    connected_ok "$ssid" || { [ -z "$SNAP" ] || restore_snapshot; return 1; }
+    connected_ok "$ssid" || { [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
 }
 
 # What country the wireless core reports right now, or nothing if that cannot be read.
@@ -338,21 +335,87 @@ iw_reg_country() {
     $IW reg get 2>/dev/null | awk -F': ' '/^country /{print substr($2, 1, 2); exit}'
 }
 
-# Put the pre-attempt config back and let the supplicant use it again, again without a
-# service restart. reload_config also re-enables every block in the file, which matters
-# because select_network had disabled the others.
-restore_snapshot() {
+# The only recovery this chip has without opening the case.  Both AIC modules are loadable
+# (/lib/modules/7.2.9/extra/aic_load_fw.ko + aic8800_fdrv.ko, listed in
+# /etc/modules-load.d/r36max2.conf), and r36-fwswap already proves rmmod/modprobe works on
+# this board - at boot, with nothing holding the interface.  At runtime the supplicant is
+# that holder, so it has to be stopped first or rmmod returns "Module is in use" and the
+# reset silently does nothing.
+#
+# NOT YET MEASURED as a cure for the association wedge: it was written from the journal
+# evidence on 2026-10-10 and has to be run on the device before it can be called a fix.
+# It is bounded to one attempt per call and it only ever runs where the link is already
+# down, so the worst case is the twenty seconds it takes.
+driver_reset() {
+    systemctl stop "$SVC" 2>/dev/null
+    ip link set "$IFACE" down 2>/dev/null
+    rmmod aic8800_fdrv 2>/dev/null
+    rmmod aic_load_fw 2>/dev/null
+    modprobe aic_load_fw 2>/dev/null
+    modprobe aic8800_fdrv 2>/dev/null
+
+    i=0
+    while [ $i -lt 20 ]; do
+        ip link show "$IFACE" >/dev/null 2>&1 && break
+        sleep 1
+        i=$((i + 1))
+    done
+    ip link show "$IFACE" >/dev/null 2>&1 || { err "wlan0 never came back after the reset"; return 1; }
+
+    start_supplicant || return 1
+    i=0
+    while [ $i -lt 40 ]; do
+        [ "$(wpa_state)" = COMPLETED ] && break
+        sleep 1
+        i=$((i + 1))
+    done
+    if [ "$(wpa_state)" = COMPLETED ]; then
+        echo "wifictl: driver reset worked, back on \"$(wpa_ssid)\"" >&2
+        ensure_lease || true
+        return 0
+    fi
+    err "driver reset did not restore the link ($(wpa_state)); this chip needs a power cycle"
+    return 1
+}
+
+# Put the pre-attempt configuration back.  This is the path that decides whether a failed
+# attempt costs the user their working connection, so it is written around what was actually
+# measured on this chip, not around what wpa_supplicant normally needs:
+#
+#   * the block the attempt added is removed from the RUNNING daemon first (`remove_network`),
+#     because leaving it there makes the daemon retry that network forever - that is the whole
+#     reason the first version of this function was wrong.  remove_network, not reload_config:
+#     reload re-reads the file and re-enables every block in one go, and the re-association it
+#     triggers is what this chip dies on (see driver_reset).  forget_saved has used
+#     remove_network all along and was measured to keep the link UP.
+#   * then the file is put back so runtime and file agree again (the block removed here was
+#     appended last, so the surviving ids do not shift).
+#   * if the link did not come back on its own, reset the driver. Without that the board
+#     stays offline until someone opens it - which is what happened on 2026-10-10: the
+#     journal shows one association rejected by the driver at 14:42:16, then 34
+#     "Association request to the driver failed" in the same boot, over 86 minutes, with
+#     ZERO restarts of the supplicant. Waiting longer does not help; nothing in the
+#     software stack had been asked to reset the chip.
+restore_snapshot() {  # $1 = the ssid whose block was just added and has to go
     err "rolling back to the configuration from before the attempt"
+    id=$(network_id_for "$1")
+    [ -n "$id" ] && $CTL remove_network "$id" >/dev/null 2>&1
     cp -a "$SNAP" "$CONF" 2>/dev/null
     chmod 600 "$CONF" 2>/dev/null
-    $CTL reload_config >/dev/null 2>&1
+
     i=0
     while [ $i -lt 25 ]; do
         [ "$(wpa_state)" = COMPLETED ] && break
         sleep 1
         i=$((i + 1))
     done
-    echo "wifictl: back on \"$(wpa_ssid)\" ($(wpa_state))" >&2
+    if [ "$(wpa_state)" = COMPLETED ]; then
+        echo "wifictl: back on \"$(wpa_ssid)\" ($(wpa_state))" >&2
+        return 0
+    fi
+
+    err "still $(wpa_state) after 25s - the WiFi driver is refusing associations, resetting it"
+    driver_reset
 }
 
 cmd_connect_saved() {  # $1 = ssid already present in $CONF
@@ -419,6 +482,14 @@ case "${1:-}" in
     forget_saved)  shift; cmd_forget_saved "$@" ;;
     enable)        shift; cmd_enable "$@" ;;
     disable)       cmd_disable ;;
+    recover)
+        # Not one of the ten subcommands ES calls - this is the operator's lever, for the one
+        # failure this chip produces that ES cannot show: after a refused association the
+        # driver takes every later attempt with it, including the network that worked all
+        # day. restore_snapshot reaches the same code by itself; this exists so it can be
+        # run deliberately, over SSH or from a script, without having to fail a connect
+        # first to get there.
+        driver_reset ;;
     channels)
         # Nothing in this fork reaches it - getAvailableChannels() has no caller in es-app -
         # so it stays an empty success instead of inventing a list nobody consumes.
@@ -430,7 +501,7 @@ case "${1:-}" in
         # switch turns on.
         exit 1 ;;
     "")
-        err "usage: wifictl {list|scanlist|list_saved|connect <ssid> <psk> <country>|connect_saved <ssid>|forget_saved <ssid>|enable [ssid psk country]|disable|has_ap_mode|channels}"
+        err "usage: wifictl {list|scanlist|list_saved|connect <ssid> <psk> <country>|connect_saved <ssid>|forget_saved <ssid>|enable [ssid psk country]|disable|recover|has_ap_mode|channels}"
         exit 2 ;;
     *)
         err "unknown subcommand: $1"

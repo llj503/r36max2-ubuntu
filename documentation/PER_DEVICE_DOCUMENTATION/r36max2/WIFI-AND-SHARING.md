@@ -112,7 +112,7 @@ syncthing、rclone、wireguard，这台机器上一个都没有），而**整棵
 | `wifictl enable` | rc=0，supplicant 保持 active |
 | `connect <在用的 SSID> <口令> CN` | **rc=0，用时 1 秒**，`wpa_state=COMPLETED`、`key_mgmt=SAE` —— 这张 AIC8800DC 实际跑起了 WPA3-个人（热点是 WPA2-PSK+SAE 混合） |
 | `connect <不存在的 SSID> …` | **rc=1**，报 `still on "…"(COMPLETED) after 40s, not on "…"`；在用网络没掉，IP 不变 |
-| `connect <在范围内、但口令错的 SSID>` | **第一版把整台机器弄下线了** —— 见下面"两次真实的失败"。这一行也是为什么上表那句"在用网络全程没掉"只对了一半：不在范围内的 SSID 会被 wpa 立刻放弃，在范围内的会一直重试 |
+| `connect <在范围内、但口令错的 SSID>` | **两次都把机器弄下线了**，第二次是修好之后复现的 —— 见"第二次的尸体自己开口了"。所以这一行不是"失败就失败"那么轻：在范围内的错网络会被 wpa 一直重试，而回滚时那次"重新关联回好网络"正是驱动判死的时刻 |
 | `forget_saved <那条>` | rc=0，conf 从 2 个块变 1 个，只删该删的，链路保持 UP。（第一版在这里重启了服务，实测会让卡"看起来掉线"几秒 —— 改成 `remove_network` + 只重写文件，不重启） |
 | `connect_saved <在用 SSID>` | rc=0、1 秒，`key_mgmt=WPA2-PSK`：选中的是 `wifi.txt` 那条**哈希形式**的块，它做不了 SAE，正好把两条通道的存储差别量出来了 |
 | `connect_saved <没存过的>` | rc=1，`"…" is not saved`，不挂起 |
@@ -124,12 +124,14 @@ syncthing、rclone、wireguard，这台机器上一个都没有），而**整棵
 现场部署的 `92272ebc` ES 二进制）。代码侧的兜底是 `post_patch()` 里的 grep：
 0103/0104/0105 任一条没打上就 `die`，构建过不去。
 
-**上面那条 IP地址 行还没在屏幕上看过**（写下本文时卡不在电脑上、局域网里也没有这台机器）。
-它现在的证据只到这三条：`0101..0105` 在一个干净解包上按文件名顺序逐个 `patch -p1` 且**每条都查
-了退出码**（`scripts/unpack` 自己不查，见下面那节）；改过的 `GuiWifi.cpp` 用这个 target 自己的
-`CXX_DEFINES/CXX_INCLUDES/CXX_FLAGS` 跑 `-fsyntax-only` 过，**未打补丁的对照文件也过** —— 否则
-"编译通过"这件事跟补丁没关系；产物里 `ca9daf6b` 与 `install_pkg` 逐字节相同，`zh_CN` catalog 里
-`IP地址`、`未连接` 两个串都在。**屏幕上那一行到底长什么样、连上之后填的是不是真地址，还没量。**
+**上面那条 IP地址 行还没在屏幕上看过。** 二进制已经离线放进卡里了（`92272ebc` → `ca9daf6b`，
+与 `install_pkg` 逐字节相同，原件备份在卡上 `/root/emulationstation.pre-ip`），但卡这几天一直在
+电脑和"连不上"之间来回，没人把它放回机器里开机。它现在的证据只到这三条：`0101..0105` 在一个
+干净解包上按文件名顺序逐个 `patch -p1` 且**每条都查了退出码**（`scripts/unpack` 自己不查，见下面
+那节）；改过的 `GuiWifi.cpp` 用这个 target 自己的 `CXX_DEFINES/CXX_INCLUDES/CXX_FLAGS` 跑
+`-fsyntax-only` 过，**未打补丁的对照文件也过** —— 否则"编译通过"这件事跟补丁没关系；产物里
+`ca9daf6b` 与 `install_pkg` 逐字节相同，`zh_CN` catalog 里 `IP地址`、`未连接` 两个串都在。
+**屏幕上那一行长什么样、连上之后填的是不是真地址，还没量。**
 
 顺便量清一件会影响你日后排查的事：**别指望在 ES 日志里看到"菜单被打开了"。** 这个构建的
 `es_log.txt` 只写 WARNING 和 ERROR（当场统计：115 WARNING、13 ERROR、**0 条 INFO**），而
@@ -165,23 +167,63 @@ ES 侧对上的是这两行：
 1. **口令错但在范围内的网络会把选择卡住**：wpa_supplicant 一直重试它，不自动退回能用的那个；
    我第一版只等"关联成功"，于是"连接失败"实质等于"没网"。（不在范围内的 SSID 会被立刻放弃，
    所以我自己那轮测试看不到这个问题 —— 这就是"你的证明在修复不存在时长得一模一样"。）
-2. **反复重启 supplicant 会把 AIC8800DC 弄死**：12 分钟里 4 次 `systemctl restart
-   r36-wpa@wlan0`（每次还配一句 `iw reg set`，它会重启信道），之后驱动对**任何**关联请求都回
-   `Association request to the driver failed` —— 连一整天都好的那个网络也一样。所以只能断电重插。
+2. ~~**反复重启 supplicant 会把 AIC8800DC 弄死**~~ —— **这条当天就被推翻了，见下一节**。
+   当时看到的是"12 分钟里 4 次重启之后驱动对任何关联请求都失败"，但那次没有对照组。
 
-三个改动，都在 `wifictl` 里：写完 conf 用 `wpa_cli reload_config` 让常驻进程重读文件，
-**不重启服务**（`reload_config` 会按文件重建运行时网络，id 和块仍然对得上 —— 当初"要重启"的
-理由不成立）；失败就把改动前的快照写回去 + `reload_config`，"连接失败"从此意味着"回到你原来
-的网络"；只在国家码真的变化时才 `iw reg set`，并用 `select_network` 明确去连用户点的那个 SSID。
+## 第二次的尸体自己开口了：不是重启弄死的，是我的回滚（2026-10-10 下午，离线读 journal）
 
-现场处理是离线做的：口令错的那条 `aqk` 块从 conf 里删掉（2 块→1 块，剩下的是原来那条哈希块），
-再把修好的 `wifictl` 装上去；原 conf 备份在构建机 `/root/card-conf.before-aqk-removal`。
+按上面第 2 条改掉重启之后，用户在屏幕上又走了一次同样的流程，卡**又**下线了，而且这次更久。
+把卡插回电脑离线读 `system.journal`，两本 boot 一对，前面那个归因直接倒下：
+
+| boot | 时段 | `systemctl` 重启 supplicant | `Association request to the driver failed` | `CTRL-EVENT-CONNECTED` |
+| --- | --- | --- | --- | --- |
+| `-1` | 07:57–14:15（旧 wifictl，会重启） | 0 条被记到 | 16 | 11 |
+| `0` | 14:37–16:08（**改完之后，重启 0 次**） | **0**（14:37:42 起，16:08:33 才停） | **34** | **1**（开机那次） |
+
+boot 0 全程一次都没重启过服务，wedge 反而翻倍，而且**再也没有连上过**。所以"别重启"不是解药，
+只是少了一种踩法。真正的时间线在 boot 0 里能逐秒对上，而且**矛头指向我自己加的"回滚"**：
+
+```
+14:42:03  ES: Error executing wifictl connect 'aqk' '<口令>' ''   <- 40 秒等待到点，脚本开始回滚
+14:42:16  wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=1
+14:42:16  kernel: rwnx_rx_sm_connect_ind ind->status_code:1 ... drv_conn_state:0
+14:42:17  wlan0: Association request to the driver failed        <- 从这一秒起到 16:08，34 次
+```
+
+被拒的是**好网络那个 BSSID**（`c8:5b:a0:e7:e3:7a`），时刻正是回滚把 conf 写回去并 `reload_config`
+之后 —— reload 让常驻进程去重新关联原来的网络，而**这一次"回来"的关联被驱动判死**，之后
+驱动的 connect 状态机对任何请求都不再接受。换句话说：跳到另一个信道/BSSID（`aqk` 在 2462 MHz，
+在用的是 2412）再回来，这个动作本身就够了，**不需要任何重启**。
+
+三个改动，都在 `wifictl` 里（`3a672179`）：
+
+* 回滚不再 `reload_config`，改成**先把刚加进去的那个运行时网络 `remove_network` 掉**、再把文件
+  写回去。`remove_network` 是 `forget_saved` 一直在用的路子，那个实测过"链路保持 UP"；文件里
+  最后追加的块删掉也不会让别的 id 位移。
+* 回滚之后 25 秒仍然不是 `COMPLETED`，就**自动做一次驱动复位**：停 supplicant → `rmmod
+  aic8800_fdrv` `aic_load_fw` → `modprobe` 回来 → 等 `wlan0` 出现 → 重连。这两个 `.ko` 是可加载
+  的（`/lib/modules/7.2.9/extra/`，`/etc/modules-load.d/r36max2.conf` 里点名），`r36-fwswap` 已经在
+  开机场景证明这套 rmmod/modprobe 在这块板子上走得通。**运行时唯一的新东西是常驻进程占着
+  `wlan0`**，所以必须先 `systemctl stop`，否则 `rmmod` 只是返回"Module is in use"、复位悄悄变成空操作。
+* 新增 `wifictl recover` 走同一段代码，给人手用 —— ES 不会调它（它只调那十个），但调试时不该
+  为了触发复位先故意失败一次。
+
+**这条复位能不能救活芯片，还没测。** 它是从 journal 的因果推出来的，写在这里只算"下一步该试什么"，
+不算修好；能算结论的只有前面那张两 boot 对照表。要测的话：卡放回机器 → 开机 → 对一个在范围内
+但口令错的网络走一次连接 → 看 `journalctl -b | grep -E 'driver reset|rwnx_close|Association request'`
+和 `wpa_state`，看它是否自己回到 `COMPLETED`（旧版本在这里就是一路失败到断电）。
+
+现场处理仍然是离线做的：口令错的那条 `aqk` 块从 conf 里删掉（2 块→1 块，剩下的是原来那条哈希块），
+再把修好的 `wifictl` 装上去；原 conf 备份在构建机 `/root/card-conf.before-aqk-removal`，
+这一版的上一份脚本备份在卡上 `/root/wifictl.pre-reset`。
 
 **还有一件要记住的事：ES 的 ERROR 行会带整条命令，里面是明文口令。** 上面 `executeScript()`
 那句 INFO 不落盘，但失败时的 `LOG(LogError) << "Error executing " << command` 会，实测卡上
-`/root/.emulationstation/es_log.txt` 里就有 2 行连着 SSID 和口令。文件是 root 0600 目录下的，
+`/root/.emulationstation/es_log.txt` 里就有连着 SSID 和口令的行（现在计数：日志文件 1 行、
+journal 3 行 —— 子进程 stderr 也会被 `r36-es` 转出去一份，所以不止一处）。文件是 root 0600 目录下的，
 和 FAT 上明文的 `wifi.txt`、菜单写进 conf 的 `psk="…"` 是同一档暴露，没有更大口子 —— 但排查时
-别把这份日志贴到公开场合。（我没改用户的日志文件，只做了计数。）
+别把这份日志贴到公开场合。（我只做了计数，没有动用户的日志文件。）
+
 
 
 

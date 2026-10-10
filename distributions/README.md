@@ -72,9 +72,16 @@ i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256�
 `apt-get install`（它会顺手升 `libblkid1`、撞上 `util-linux` 的精确 PreDepends）见
 [KNOWN-ISSUES.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/KNOWN-ISSUES.md)。
 
-**卡上现在还是 `92272ebc`，也就是还没有 IP 行。** `0105` 只改 C++，`zh_CN` catalog 逐字节没动
-（产物里仍是 `604b102148bf97cc…`，与卡上那份相同），所以要补的只有 `/usr/local/bin/emulationstation`
-一个文件 —— 但截至本文写下为止，卡既不在电脑上也 ping 不通，这一步**没做**。
+**卡上的 ES 已经是 `ca9daf6b`（带 IP 行了）**，2026-10-10 16:12 离线放进去的：`0105` 只改 C++，
+`zh_CN` catalog 逐字节没动（产物里仍是 `604b102148bf97cc…`，与卡上那份相同），所以要搬的文件
+只有 `/usr/local/bin/emulationstation` 一个，`cmp` 与 `install_pkg` 相同、`root:root 755`，
+被换下来的原件在卡上 `/root/emulationstation.pre-ip`。**但这一行本身还没在屏幕上看见过** ——
+卡回到电脑之后一直没回机器里。
+
+同年同日的第三次改动落在 `wifictl`（回滚不再 `reload_config`，加自动驱动复位，见
+[WIFI-AND-SHARING.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md)），
+所以 `3fd93d8b` 里那份 `b1eadc14` 已经不是树上的版本了 —— 那条哈希的镜像**只**在这一点上落后于
+仓库，重打之后本表会跟着换。
 
 只读挂载 `3fd93d8b` 的产物复核过：`/usr/config/PortMaster/` 恰好是 `fix_control.py`、
 `gamecontrollerdb-r36max2.txt`、`release/PortMaster.zip` 三项，三个 SDL2 扩展库带 soname 符号链接，
