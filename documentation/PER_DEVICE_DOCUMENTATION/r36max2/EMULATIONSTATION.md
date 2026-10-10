@@ -327,3 +327,10 @@ main.cpp:782 -> InputManager.cpp:879 -> Window.cpp:288
 这一行能不能出现，取决于一个文件在不在：`isScriptingSupported(WIFI)` 查的是字面路径
 `/usr/bin/wifictl`。后端与全部实测见 [WIFI-AND-SHARING.md](WIFI-AND-SHARING.md)。
 
+绕开 `openNetworkSettings()` 有一个代价当时没看出来：**整棵树唯一的一条 IP 行就长在那一页上**
+（`GuiMenu.cpp` 的 INFORMATION 组），所以 `GuiWifi` 这一页从加进来那天起就没显示过地址。
+`patches/0105` 把同样的行放进了 `GuiWifi::load()` —— 挑 `load()` 是因为它正是 ES 在"连接成功"
+那个框之后和 REFRESH 之后都会走到的地方，不需要自己再加轮询。这条不是锦上添花：`wifictl` 是
+**故意**把"关联成功"当成功、把"拿不到地址"当环境问题的（口令错永远关联不上，那才是要报的失败；
+DHCP 慢或不发地址如果也报"连接失败"就是句谎），两边一叠加，"连上了但没地址"以前**没有任何地方能看见**。
+

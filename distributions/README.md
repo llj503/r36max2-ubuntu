@@ -30,13 +30,14 @@
 | `r36max2-ubuntu-v18.img.xz` | `da2a12b30a0bbe4b6a1bc6f48d00f41b8e61ab57f98cf9e690482aade0c71510` |
 | `r36max2-ubuntu-v19.img.xz` | `ea1aa41ea33d56b467d2100c333baf8d6c0f55c7cd00b99b63e56a8d018cb282` |
 | `r36max2-ubuntu-v20.img.xz` | `da46854618144d70b49d47cf54ad7aa81bbf59922636e2670c4cbb2e2f66a143` |
-| `r36max2-ubuntu-v21.img.xz` | `df1ef545d04fc5edfde2ed56ae1cdc8ca35dd5fabb046721fa2c9006f53498a8` |
+| `r36max2-ubuntu-v21.img.xz` | `3fd93d8beb73cecb2f9206deecfb7da7fc414da314c3ed76a604602a10b32086` |
 | `r36max2-ubuntu-26.04.img.xz` | `c0df67ce40f27392d8a9d94a6016754f747a0dd87a3be2e499362bf0d699b64a` |
 | `r36max2-ubuntu-alt-arkosblobs.img.xz` | `360ac81678b1344302844d2e89fea541033692c02577de8a15fb65ad12e968d8` |
 
-**v21 这条哈希（`df1ef545`，2026-10-10 14:40，864,549,544 B）是"当前这棵树产出的镜像"，还没刷进卡里。**
+**v21 这条哈希（`3fd93d8b`，2026-10-10 15:25，864,526,284 B）是"当前这棵树产出的镜像"，还没刷进卡里，
+也还没在屏幕上验过。**
 真正刷进卡、开过机的是 `7d5cc138`（2026-10-09，839,669,512 B）：卡上跑的就是它 + 当场手工应用的
-i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256。今天在同一天里 v21 打过四次，
+i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256。今天在同一天里 v21 打过五次，
 记下来是为了别把"量过的哈希"和"卡在跑的东西"混起来：
 
 | 哈希 | 时间 | 里面是什么 | 状态 |
@@ -44,9 +45,10 @@ i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256�
 | `7d5cc138` | 10-09 | 电池/guard/i18n 四项修复 | **刷进卡里、开过机** |
 | `2ef50cd4` | 10-10 上午 | + PortMaster 那一层 | 被当天下一版取代 |
 | `cd4e0362` | 10-10 12:25 | + ES 的 Wi-Fi 菜单 | **别刷这一版**：它的 `wifictl` 会重启 supplicant 且失败不回滚，用户第一次在屏幕上实测就把卡弄到完全离线（原因见 [WIFI-AND-SHARING.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md)） |
-| `df1ef545` | 10-10 14:40 | 同上 + `wifictl` 改成 `reload_config` / 失败回滚 / 只在国家码变化时 `iw reg set` | 当前这棵树的产物 |
+| `df1ef545` | 10-10 14:40 | 同上 + `wifictl` 改成 `reload_config` / 失败回滚 / 只在国家码变化时 `iw reg set` | 被当天下一版取代 |
+| `3fd93d8b` | 10-10 15:25 | 同上 + Wi-Fi 页面顶部的 **IP地址** 行（`patches/0105`） | 当前这棵树的产物 |
 
-`df1ef545` 比 `7d5cc138` 多的两层：
+`3fd93d8b` 比 `7d5cc138` 多的两层：
 
 * **PortMaster**（见 [PORTMASTER.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/PORTMASTER.md)）：
   pin 住的 `PortMaster.zip`（24,131,471 B，sha256 `6e4fa938…`）+ 两个启动器 + ES 的 Ports 入口 +
@@ -57,8 +59,10 @@ i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256�
 * **ES 的 Wi-Fi 菜单**（见
   [WIFI-AND-SHARING.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/WIFI-AND-SHARING.md)）：
   新增 `/usr/bin/wifictl`（17,833 B，755，十个子命令齐）+ `patches/0103`（把入口加进非 batocera
-  分支）+ `patches/0104`（补 `zh_CN` 九个空串）。因为 ES 二进制变了，镜像里的 ES 从 `b6b968cd`
-  变成 **`92272ebcc0d181c7…`**，自检仍然要求镜像与 `install_pkg` 逐字节相同（这次两边都是 `92272ebc`）。
+  分支）+ `patches/0104`（补 `zh_CN` 九个空串）+ `patches/0105`（页面顶部的 **IP地址** 行，
+  因为 0103 绕开了 `openNetworkSettings()`，而那页长着整棵树唯一的 IP 行）。ES 二进制跟着变了两次：
+  `b6b968cd` → `92272ebcc0d181c7…`（0103/0104）→ **`ca9daf6bda0bc1d3…`**（0105，8,538,312 B）；
+  自检仍然要求镜像与 `install_pkg` 逐字节相同（这次两边都是 `ca9daf6b`）。
 
 **卡上没有为了这两层重刷**（刷一次就抹掉那 22.6 GB），是照样补齐的：四个缺的包
 `libsdl2-ttf-2.0-0 / libsdl2-image-2.0-0 / libsdl2-gfx-1.0-0 / libwebpdemux2` 用构建机从同一快照
@@ -68,13 +72,22 @@ i18n/电量/guard 修复，22.6 GB ROM 也拷进去并逐系统抽查过 sha256�
 `apt-get install`（它会顺手升 `libblkid1`、撞上 `util-linux` 的精确 PreDepends）见
 [KNOWN-ISSUES.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/KNOWN-ISSUES.md)。
 
-只读挂载 `df1ef545` 的产物复核过：`/usr/config/PortMaster/` 恰好是 `fix_control.py`、
-`gamecontrollerdb-r36max2.txt`、`release/PortMaster.zip` 三项，三个 SDL2 扩展库带 soname 符号链接且属
-root，`libwebpdemux.so.2` 在，`/etc/hosts` 有 `127.0.1.1 r36max2`，`/usr/bin/wifictl` 与仓库副本
-`cmp` 相同（十个子命令、写路径里 0 次 `systemctl restart`），`zh_CN` catalog 里有"Wi-Fi 网络"。
+**卡上现在还是 `92272ebc`，也就是还没有 IP 行。** `0105` 只改 C++，`zh_CN` catalog 逐字节没动
+（产物里仍是 `604b102148bf97cc…`，与卡上那份相同），所以要补的只有 `/usr/local/bin/emulationstation`
+一个文件 —— 但截至本文写下为止，卡既不在电脑上也 ping 不通，这一步**没做**。
+
+只读挂载 `3fd93d8b` 的产物复核过：`/usr/config/PortMaster/` 恰好是 `fix_control.py`、
+`gamecontrollerdb-r36max2.txt`、`release/PortMaster.zip` 三项，三个 SDL2 扩展库带 soname 符号链接，
+`/etc/hosts` 有 `127.0.1.1 r36max2`，`/usr/bin/wifictl` 与仓库副本 `cmp` 相同（十个子命令、写路径里
+0 次 `systemctl restart`），`/lib/modules` 只有 `7.2.9`，镜像里的 ES 与 `install_pkg` 那份 `cmp`
+逐字节相同（`ca9daf6b`），`zh_CN` catalog 里 `IP地址`、`未连接` 两个串都在。
+**注意最后一条证据链**：`0105` 的标记是注释，stripped ELF 里查不到，所以产物侧能证明的只有
+"打进镜像的 ES == `post_patch()` 验收过的那份二进制"，而 `post_patch()` 没有那个标记就会 `die`。
+（顺带一条自己踩的坑：第一次想用 `strings` 在 `.mo` 里找"IP地址"，返回 0 —— `strings` 只提 ASCII，
+这个 0 什么都不说明；改用 `grep -a` 才是 1。）
 
 **镜像内容只由配方决定，`scripts/image` 里那些自检不改一个字节**，所以加断言不需要重打。
-`df1ef545` 是**带着全部断言跑出来的**（PortMaster 四处、三个 SDL2 扩展库、Wi-Fi 菜单的十个子命令、
+`3fd93d8b` 是**带着全部断言跑出来的**（PortMaster 四处、三个 SDL2 扩展库、Wi-Fi 菜单的十个子命令、
 launcher 两处标记、镜像里的 ES 与 `install_pkg` 逐字节相同、catalog 35、载体 locale 在），
 打包当时全绿；上面那段"只读挂载复核"是对着**产物**做的，不是对着构建目录做的。
 

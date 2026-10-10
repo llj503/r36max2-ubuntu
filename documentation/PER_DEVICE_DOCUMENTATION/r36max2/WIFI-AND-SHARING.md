@@ -52,6 +52,17 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 `GuiTextEditPopupKeyboard`，`UseOSK` 在非 x86 构建里默认就是 true，不需要外接键盘）；
 列表里还有 **手动输入**，用于隐藏的 SSID。
 
+页面顶部现在有一条 **IP地址**：连上了就是那个地址，没连上显示 **未连接**（`0105` 补丁）。
+这条不是顺手加的装饰 —— `0103` 为了让菜单出现，打开的是 `GuiWifi` 而**不是**
+fork 自己的 `openNetworkSettings()`（后者一页里还顺手开关 sshd、samba、simple-http、
+syncthing、rclone、wireguard，这台机器上一个都没有），而**整棵树唯一的一条 IP 行就长在
+`openNetworkSettings()` 上**。所以那时 ES 对"连上了"的全部回答只有那句
+**连接成功** —— 偏偏 `wifictl` 是**故意**把"关联成功"当成功、把"拿到地址"当环境问题的
+（口令错永远关联不上，那才是要报的失败；DHCP 慢或不发地址不该报"连接失败"这种谎）。
+两边凑一起，"连上了但没有地址"这个情况以前**没有任何地方能看见**。
+地址多于一个时和设置页一样变成 `x.x.x.x (+)`，点开列出全部；这一支的
+`AVAILABLE IP ADDRESSES:` 上游本来就没译成中文，这里保持一致没有另加翻译。
+
 这条菜单不是我们写的前端，是 fork 里本来就有的 `es-app/src/guis/GuiWifi.cpp`，它整个后端只有
 一个外部程序：**`/usr/bin/wifictl`**（`packages/wifi-setup/wifictl`）。这个路径不是风格问题 ——
 `ApiSystem::isScriptingSupported(WIFI)` 查的就是这个字面路径，文件不在，菜单项根本不出现，
@@ -110,8 +121,15 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
 整套测试跑完，`/etc/wpa_supplicant/wpa_supplicant-wlan0.conf` 与测试前 `cmp` **逐字节相同**。
 
 **"设置 → Wi-Fi 网络"这一行已经在屏幕上确认**（2026-10-10；卡上跑的是 `7d5cc138` +
-现场部署的 `92272ebc` ES 二进制）。代码侧的兜底仍是 `post_patch()` 里两条 grep：
-0103/0104 没打上就 `die`，构建过不去。
+现场部署的 `92272ebc` ES 二进制）。代码侧的兜底是 `post_patch()` 里的 grep：
+0103/0104/0105 任一条没打上就 `die`，构建过不去。
+
+**上面那条 IP地址 行还没在屏幕上看过**（写下本文时卡不在电脑上、局域网里也没有这台机器）。
+它现在的证据只到这三条：`0101..0105` 在一个干净解包上按文件名顺序逐个 `patch -p1` 且**每条都查
+了退出码**（`scripts/unpack` 自己不查，见下面那节）；改过的 `GuiWifi.cpp` 用这个 target 自己的
+`CXX_DEFINES/CXX_INCLUDES/CXX_FLAGS` 跑 `-fsyntax-only` 过，**未打补丁的对照文件也过** —— 否则
+"编译通过"这件事跟补丁没关系；产物里 `ca9daf6b` 与 `install_pkg` 逐字节相同，`zh_CN` catalog 里
+`IP地址`、`未连接` 两个串都在。**屏幕上那一行到底长什么样、连上之后填的是不是真地址，还没量。**
 
 顺便量清一件会影响你日后排查的事：**别指望在 ES 日志里看到"菜单被打开了"。** 这个构建的
 `es_log.txt` 只写 WARNING 和 ERROR（当场统计：115 WARNING、13 ERROR、**0 条 INFO**），而
