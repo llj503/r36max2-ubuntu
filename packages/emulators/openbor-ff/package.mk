@@ -33,9 +33,13 @@
 # `STRIP = cp` (:252), and the recipe strips with the cross strip afterwards, so the
 # Makefile is not edited to work around a toolchain choice.
 #
-# PKG_CONFIG_SYSROOT_DIR/PKG_CONFIG_LIBDIR are not decoration: engine/Makefile:519 runs
-# `pkg-config sdl2 --cflags` during the compile, and without those two variables that is
-# the host's amd64 sdl2.pc, i.e. -I/usr/include/SDL2 added to an aarch64 build.
+# PKG_CONFIG_* is deliberately NOT set here. config/functions:218-235 already exports a
+# cross pkg-config for target builds - PKG_CONFIG_SYSROOT_DIR=${SYSROOT_PREFIX} and a
+# PKG_CONFIG_LIBDIR that globs both usr/lib/<triple>/pkgconfig and lib/<triple>/pkgconfig -
+# and engine/Makefile:519 shells out `pkg-config sdl2 --cflags` mid-compile, which is the
+# only reason the question came up. Overriding it here would have been narrower than what
+# the framework already provides (the measured sdl2.pc lives in lib/aarch64-linux-gnu/, not
+# usr/lib/), so the recipe inherits instead of re-declaring.
 #
 # The tarball is 189 MB because GitHub's archive includes media/; it is fetched once.
 
@@ -74,15 +78,11 @@ post_patch() {
 
 make_target() {
   cd ${PKG_BUILD}/engine || return 1
-  local TRIPLE="aarch64-r36max2-linux-gnu"
 
   make BUILD_LINUX_aarch64=1 \
        SDKPATH="${SYSROOT_PREFIX}" \
        NO_STRIP=1 \
-       CC="${CC}" CXX="${CXX}" AR="${AR}" RANLIB="${RANLIB}" \
-       PKG_CONFIG_SYSROOT_DIR="${SYSROOT_PREFIX}" \
-       PKG_CONFIG_LIBDIR="${SYSROOT_PREFIX}/usr/lib/${TRIPLE}/pkgconfig:${SYSROOT_PREFIX}/usr/share/pkgconfig" \
-       V=1
+       CC="${CC}" CXX="${CXX}" AR="${AR}" RANLIB="${RANLIB}"
 }
 
 makeinstall_target() {
@@ -98,8 +98,9 @@ makeinstall_target() {
 
   mkdir -p ${INSTALL}/usr/bin
   install -m 755 "${ELF}" ${INSTALL}/usr/bin/OpenBOR-ff
-  ${STRIP:-${TOOLCHAIN}/bin/aarch64-r36max2-linux-gnu-strip} ${INSTALL}/usr/bin/OpenBOR-ff 2>/dev/null ||
-    build_msg "CLR_YELLOW" "WARN" "openbor-ff: cross strip unavailable, shipping unstripped" "indent"
+  # config/functions:449 exports STRIP="${TARGET_PREFIX}strip" for target builds, so the
+  # cross binutils is what runs here - not the host strip the Makefile would have used.
+  ${STRIP} ${INSTALL}/usr/bin/OpenBOR-ff
 
   # The launcher ES calls. It owns the pak-per-launch directory dance OpenBOR requires:
   # sdlport.c:30 hard-codes the game directory as "Paks" relative to the CWD, and
@@ -110,13 +111,21 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/local/bin
   install -m 755 ${PKG_DIR}/sources/r36-openbor ${INSTALL}/usr/local/bin/r36-openbor
 
-  # The engine's shared-library needs have to be satisfiable on the card, not just at link
-  # time: -lvpx and -lSDL2_gfx resolve through a .so symlink that points at a soname, and if
-  # the symlink and the shipped runtime ever disagree the build succeeds and the binary
-  # dies on the device with "error while loading shared libraries".
-  local NEEDS
-  NEEDS=$(${READEPF:-${TOOLCHAIN}/bin/aarch64-r36max2-linux-gnu-readelf} -d ${INSTALL}/usr/bin/OpenBOR-ff 2>/dev/null |
-          awk -F'[' '/NEEDED/{print $2}' | tr -d ']' | tr '\n' ' ')
-  [ -n "${NEEDS}" ] || die "openbor-ff: could not read NEEDED entries off the built engine"
-  build_msg "CLR_OK" "STEP" "engine NEEDED: ${NEEDS}" "indent"
+  # Every library the engine asks the loader for has to be in the rootfs this image ships,
+  # not merely have been present at link time: -lvpx and -lSDL2_gfx resolve through a .so
+  # symlink whose target is a versioned soname, and if that symlink and the shipped runtime
+  # ever disagree, the build still succeeds and the binary dies on the device with
+  # "error while loading shared libraries". The sysroot is rootfs-apt's mirror of
+  # usr/lib/aarch64-linux-gnu + lib/aarch64-linux-gnu, so checking NEEDED against it is
+  # checking against what the card will have.
+  local soname missing=""
+  for soname in $(readelf -d ${INSTALL}/usr/bin/OpenBOR-ff 2>/dev/null |
+                  sed -n 's/.*Shared library: \[\(.*\)\]/\1/p'); do
+    find ${SYSROOT_PREFIX} -name "${soname}" -print -quit 2>/dev/null |
+      grep -q . || missing="${missing} ${soname}"
+  done
+  if [ -n "${missing}" ]; then
+    die "openbor-ff: links against${missing}, which is not in the mirrored rootfs - the engine would fail to load on the card"
+  fi
+  build_msg "CLR_OK" "STEP" "NEEDED all present in the shipped rootfs: $(readelf -d ${INSTALL}/usr/bin/OpenBOR-ff 2>/dev/null | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | tr '\n' ' ')" "indent"
 }
