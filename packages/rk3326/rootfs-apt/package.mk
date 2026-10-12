@@ -40,6 +40,15 @@ PKG_TOOLCHAIN="manual"
 # requests and pypng all arrive inside PortMaster.zip itself (pylibs.zip, which pugwash
 # extracts on first run); only these shared libraries have to come from the archive.
 # libSDL2_mixer is already here through libsdl2-mixer-dev.
+# libsdl2-gfx-dev and libvpx-dev are OpenBOR's, and the reason they are here rather than
+# something a recipe can arrange for itself: the engine links -lSDL2_gfx and -lvpx
+# (engine/Makefile:599 -lSDL2 -lSDL2_gfx, :643 -lvpx), and measured against this sysroot
+# both were absent - no headers (SDL2/SDL_gfxPrimitives.h, vpx/vpx_encoder.h both MISSING)
+# and no linker name (only the runtime libSDL2_gfx-1.0.so.0 / libvpx.so.12). The -dev
+# packages carry the .so symlink each points at, so what OpenBOR links against is
+# exactly what this rootfs ships; rootfs-apt re-mirrors usr/include and
+# usr/lib/aarch64-linux-gnu into the per-package sysroot, which is how they reach the
+# cross build.
 R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   iputils-ping curl wget vim git htop tmux less procps kmod usbutils tzdata net-tools \
   udev systemd-timesyncd python3 alsa-utils evtest input-utils rfkill libnss-mdns fdisk \
@@ -50,6 +59,7 @@ R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   weston wayland-protocols libwayland-dev libwayland-bin grim wf-recorder foot wofi kbd cmake \
   libsdl2-dev libsdl2-mixer-dev libfreeimage-dev \
   libsdl2-ttf-2.0-0 libsdl2-image-2.0-0 libsdl2-gfx-1.0-0 \
+  libsdl2-gfx-dev libvpx-dev \
   libavcodec-dev libavformat-dev libswscale-dev \
   libcurl4-openssl-dev libasound2-dev libudev-dev libfreetype-dev libfmt-dev \
   rapidjson-dev libvlc-dev gettext \
