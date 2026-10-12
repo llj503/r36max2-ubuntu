@@ -17,6 +17,7 @@ PKG_DEPENDS_TARGET="toolchain rootfs-base rootfs-apt \
   usb-gadget audio keymapper osk wayland \
   emulationstation es-launcher es-theme-art-book-next portmaster \
   libretro-fceumm libretro-gambatte libretro-mgba libretro-snes9x2010 libretro-vba-next \
-  libretro-pcsx-rearmed libretro-flycast libretro-mednafen-saturn libretro-parallel-n64"
+  libretro-pcsx-rearmed libretro-flycast libretro-mednafen-saturn libretro-parallel-n64 \
+  libretro-fbneoplus libretro-gpsp-ezode"
 PKG_SECTION="virtual"
 PKG_LONGDESC="Root package: everything that goes into the r36max2 image."

@@ -46,6 +46,9 @@ if [ -z "$core" ]; then
 		n64) core=parallel_n64 ;;
 		dreamcast) core=flycast ;;
 		saturn) core=mednafen_saturn ;;
+		# All five arcade folders are the same core; the split is the ROM pack's, not
+		# the emulator's (see the comment in es_systems.cfg).
+		fbneo|neogeo|arcade|cps1|cps2) core=fbneoplus ;;
 		*)
 			echo "r36-play: no -core given and no default for system '$sys'" >&2
 			exit 4 ;;

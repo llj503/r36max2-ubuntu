@@ -55,6 +55,15 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/roms/bios/dc
   printf '%s\n' "Put dc_boot.bin here (flycast looks in <system_directory>/dc/, and writes dc_nvmem.bin and vmu_save_*.bin next to it)." \
     > ${INSTALL}/roms/bios/dc/.keep
+  # FBNeo's extra content (Neo Geo's neogeo.zip BIOS above all, plus its samples and
+  # hi-score files) is looked up as <system_directory>/fbneo/<name> and
+  # <system_directory>/fbneo/{arcade,consoles}/<name>, measured in locate_archive,
+  # libretro.cpp:925-1000. system_directory is /roms/bios (retroarch.cfg), so this is the
+  # directory the core actually searches. Without neogeo.zip every Neo Geo game fails with
+  # "Cannot find required rom: neogeo.zip".
+  mkdir -p ${INSTALL}/roms/bios/fbneo
+  printf '%s\n' "Put neogeo.zip here (FBNeo searches <system_directory>/fbneo/ for its BIOS and samples; the ROM pack carries this file in bios/)." \
+    > ${INSTALL}/roms/bios/fbneo/.keep
 
   # RetroArch's board settings, passed with --appendconfig by r36-play. See the header
   # of the file for why shipping it is not optional.
