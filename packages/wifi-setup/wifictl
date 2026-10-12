@@ -58,7 +58,13 @@ audit() {
 # Which runtime network the daemon is working on right now, or nothing when it is not
 # connected.  The rollback needs the id, not the ssid: after select_network the others are
 # disabled, so "go back" has to name the one to re-enable.
-current_network_id() { $CTL status 2>/dev/null | awk -F= '/^network_id=/{print $2}'; }
+#
+# The field is spelled `id=` by older wpa_supplicant and `network_id=` by newer ones, and
+# this card's version was not measured when the first version of this function was written -
+# a lookup that silently returns nothing would have sent every rollback down the fallback
+# branch, which is the same class of bug the audit line below exists to catch.  Accept both,
+# and never match `id_str=` (the regex is anchored on the `=`).
+current_network_id() { $CTL status 2>/dev/null | awk -F= '/^(network_)?id=/{print $2; exit}'; }
 
 # Is $1 present in the daemon's scan table?  "no" here means the daemon has no BSS to
 # associate with, which is a completely different answer from "we tried and the AP refused"
@@ -376,6 +382,28 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
 
     $CTL enable_network "$id" >/dev/null 2>&1
     $CTL select_network "$id" >/dev/null 2>&1
+
+    # If the SSID is not in the daemon's scan table, naming the network is not enough: wpa
+    # associates with a BSS, not with an ssid string, so a select with no matching BSS just
+    # waits for someone else to find it.  This is the mechanism that best fits the 2026-10-12
+    # sample - the chip was healthy, the good network stayed COMPLETED for the entire 40
+    # seconds, and no "Trying to associate" for the requested SSID ever appeared - and
+    # reload_config above is exactly the step that can drop the scan results the menu had
+    # just collected.  So ask for a scan and record whether the BSS turned up.  If it stays
+    # absent, that is the answer, and it is not a passphrase question.  Unproven, which is
+    # why it is audited instead of asserted.
+    if [ "$(bss_seen "$ssid")" = no ]; then
+        audit "connect: \"$ssid\" absent from the scan table after reload - requesting a scan"
+        $CTL scan >/dev/null 2>&1
+        i=0
+        while [ $i -lt 10 ]; do
+            [ "$(bss_seen "$ssid")" = yes ] && break
+            sleep 1
+            i=$((i + 1))
+        done
+        audit "connect: scanned bss=$(bss_seen "$ssid") scan_rows=$(scan_rows | wc -l) state=$(wpa_state) waited=${i}s"
+        $CTL select_network "$id" >/dev/null 2>&1
+    fi
 
     connected_ok "$ssid" || { [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
 }
