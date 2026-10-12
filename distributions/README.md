@@ -165,6 +165,10 @@ libc.so.6`）在卡的 `/usr/lib/aarch64-linux-gnu` 全部能找到，5 个必�
 以及 `/roms/{openbor,onscripter}`、`/roms/.config/openbor`。旧 cfg 备份在
 `/root/es_systems.cfg.pre-engines`。
 
+部署日志那行 `systems: 17` 是 grep 计数，不是系统数：`grep -c '<system>'` 把第 23 行注释里的
+`/roms/<system>` 也算进去了，真实元素是 **16** 个。`scripts/image` 的自检是解析 XML 的，它报的
+`cfg systems cross-checked: 16` 才是准的——两个数不一致时以解析那个为准。
+
 第一次写卡之所以停在 `ABORT: gate` 上，是读卡器整个从 Windows 的 USB 树上消失
 （`usbipd list` 里 `5-2` 不再存在，只剩 persisted GUID），不是 WSL 掉附件那种"说 Attached
 但 /sys/block 没有"。门的效果是**那一次一个字节都没写**。
