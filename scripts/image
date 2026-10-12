@@ -677,6 +677,14 @@ MANIFEST="${TARGET_IMG}/r36max2-ubuntu-${IMG_V}.manifest.txt"
   echo "aic8800: $(get_pkg_variable aic8800 PKG_VERSION) / fw $(get_pkg_variable aic8800-dc-fw PKG_VERSION)"
   echo "vendor-blobs:"; sed 's/^/  /' "${BLOBS_SUMS}"
   echo "dpkg-count: $(wc -l < "${R}/etc/r36max2/dpkg-manifest.txt" 2>/dev/null || echo 0)"
+  # The tree tally exists because a hash alone cannot answer "why did the .xz change size".
+  # Measured case: rebuilding after a 39-byte es_systems.cfg comment edit changed the
+  # compressed image by 757,720 bytes, and nothing in the record could say whether that was
+  # content or noise - the old .img.xz had already been overwritten by the new one under the
+  # same filename, so there was nothing left to diff. These two numbers are cheap, they are
+  # independent of xz, and they make the next such question answerable from the manifests.
+  echo "rootfs-tree: $(SUDO du -sb "${R}" 2>/dev/null | cut -f1) bytes, $(SUDO find "${R}" -type f 2>/dev/null | wc -l) files"
+  echo "img-size: $(stat -c%s "${IMG}") raw, $(stat -c%s "${TARGET_IMG}/r36max2-ubuntu-${IMG_V}.img.xz") xz"
   cat "${TARGET_IMG}/r36max2-ubuntu-${IMG_V}.img.xz.sha256"
 } > "${MANIFEST}"
 echo "=== manifest: ${MANIFEST}"
