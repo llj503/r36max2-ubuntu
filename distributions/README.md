@@ -51,7 +51,7 @@
 | `c8c34754` | 10-12 08:42 | 同上 + 审计行、`status` 字段两种写法都吃 | 被取代 |
 | `d68cc9e9` | 10-12 09:06 | 同上 + 连接改成运行时 `add_network`（不再重读文件） | 被取代 |
 | `1edb6129` | 10-12 09:28 | 同上 + **`set_network` 这个动词名修对**（`wifictl 83bcff2a`） | 被取代；**卡现在跑的就是这一版的底子** |
-| **`0f17e54e`** | 10-12 13:27 | 同上 + **两个新核**（`fbneoplus`、`gpsp_ezode`）**+ 两个独立引擎**（`OpenBOR-ff`、`onsyuri`）+ 各自的 launcher，ES 系统 8 → 16 | **当前这棵树的产物；还没刷进卡，也一次都没上机** |
+| **`0f17e54e`** | 10-12 13:27 | 同上 + **两个新核**（`fbneoplus`、`gpsp_ezode`）**+ 两个独立引擎**（`OpenBOR-ff`、`onsyuri`）+ 各自的 launcher，ES 系统 8 → 16 | **当前这棵树的产物。卡没有刷这一版**（刷一次会带走 26 GB ROM），但这层的内容已经逐个文件写进卡并对过 sha；**仍未上机** |
 
 `0f17e54e` 相对 `1edb6129` 多的一层，全部是模拟器侧（890,895,268 B，比上一版大 26,617,480 B，
 主要是 FBNeo 那 70 MB 未压缩的核）：
@@ -129,7 +129,7 @@ ES 是 `ca9daf6b`（8,538,312 B）与 `install_pkg` 逐字节相同；`zh_CN` ca
 **还有一条证据链要说清**：`0105` 的标记是注释，stripped ELF 里查不到，所以产物侧能证明的只有
 "打进镜像的 ES == `post_patch()` 验收过的那份二进制"，而 `post_patch()` 没有那个标记就会 `die`。
 
-## 10-12 下午：新模拟器与新核**只写到卡**，还没进任何镜像
+## 10-12 下午：两个新核与两个引擎——镜像侧是 `0f17e54e`，卡侧是原地写进去的同一批文件
 
 这一轮是"把卡原地抬上去"，不是刷图（刷一次抹掉 22.6 GB ROM）。写的东西逐个写后读回 sha 比对，
 全部是**新增路径**，唯一覆盖的是 `es_systems.cfg`，而它这次**故意没写**（原因见末尾）。
@@ -157,15 +157,20 @@ libc.so.6`）在卡的 `/usr/lib/aarch64-linux-gnu` 全部能找到，5 个必�
    `/root/.emulationstation/` 是 `f8f311f3`，而 ES 先读后者——即生效的是 `/root` 那份。以前某轮
    只手改过一边。因此 deploy 必须两份一起写（`deploy-engines.sh` 就是这么做的）。
 
-`es_systems.cfg` 这次**没写**，两个引擎的二进制也**没写**：写卡进行到身份门就停了——读卡器
-在 Windows 的 USB 树上整个消失（`usbipd list` 里 `5-2` 已经不存在，只剩两条 persisted GUID），
-不是 WSL 侧掉附件那么简单。门的作用是**一个字节都没写**，日志里 `ABORT: gate`，卡上仍是
-上面那五行新增内容。`deploy-engines.sh` 已经把 payload 全查过一遍并打出 sha
-（`OpenBOR-ff 5e37c149`、`onsyuri 533aa418`、`r36-openbor f5de1305`、`r36-ons 355e6ecc`、
-`es_systems.cfg 9eb8a33c`），重插读卡器后直接重跑即可。
+**写卡已完成**（重插读卡器之后，`deploy-engines.sh` 一次跑过，8 个 payload 全部读回 sha 一致）：
+`/usr/lib/libretro/{fbneoplus,gpsp_ezode}_libretro.so`、`/usr/bin/{OpenBOR-ff,onsyuri}`、
+`/usr/local/bin/{r36-openbor,r36-ons}`、`/etc/emulationstation/es_systems.cfg` 与
+`/root/.emulationstation/es_systems.cfg`（**两份都是 `9eb8a33c`**，之前那处
+`/etc 447bd0d9` vs `/root f8f311f3` 的不一致就此消掉），`/roms/bios/fbneo/neogeo.zip`，
+以及 `/roms/{openbor,onscripter}`、`/roms/.config/openbor`。旧 cfg 备份在
+`/root/es_systems.cfg.pre-engines`。
 
-没提前写 cfg 的原因是仓库那份新增了 `openbor` 与 `onscripter` 两个系统，而这两个引擎的二进制
-还没进卡：ES 会列出 27 个能选中、一按就报 `r36-openbor: not found` 的游戏——这种"看起来装机
+第一次写卡之所以停在 `ABORT: gate` 上，是读卡器整个从 Windows 的 USB 树上消失
+（`usbipd list` 里 `5-2` 不再存在，只剩 persisted GUID），不是 WSL 掉附件那种"说 Attached
+但 /sys/block 没有"。门的效果是**那一次一个字节都没写**。
+
+cfg 没有提前写的原因是仓库那份新增了 `openbor` 与 `onscripter` 两个系统，而这两个引擎的二进制
+当时还没进卡：ES 会列出 27 个能选中、一按就报 `r36-openbor: not found` 的游戏——这种"看起来装机
 成功、点进去全红"的状态比暂时看不见更糟。
 
 
