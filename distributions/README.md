@@ -104,6 +104,40 @@ ES 是 `ca9daf6b`（8,538,312 B）与 `install_pkg` 逐字节相同；`zh_CN` ca
 **还有一条证据链要说清**：`0105` 的标记是注释，stripped ELF 里查不到，所以产物侧能证明的只有
 "打进镜像的 ES == `post_patch()` 验收过的那份二进制"，而 `post_patch()` 没有那个标记就会 `die`。
 
+## 10-12 下午：新模拟器与新核**只写到卡**，还没进任何镜像
+
+这一轮是"把卡原地抬上去"，不是刷图（刷一次抹掉 22.6 GB ROM）。写的东西逐个写后读回 sha 比对，
+全部是**新增路径**，唯一覆盖的是 `es_systems.cfg`，而它这次**故意没写**（原因见末尾）。
+
+| 卡上新增的文件 | sha256(16) | 字节 |
+| --- | --- | --- |
+| `/usr/lib/libretro/fbneoplus_libretro.so` | `edf24709f6d3341f` | 70,361,112 |
+| `/usr/lib/libretro/gpsp_ezode_libretro.so` | `68ecb835d3f5c51d` | 1,175,504 |
+| `/roms/bios/fbneo/neogeo.zip` | `d2d8ab5d5fc5ce41` | 1,760,976 |
+| `/roms/openbor/001.pak … 032.pak`（27 个）+ `gamelist.xml` | `001.pak` = `e6e2b4af507585dd` | 3.8 GB |
+| `/roms/neogeo` 3 个、`/roms/cps1` 3 个、`/roms/cps2` 2 个、`/roms/fbneo` 5 个 `.7z` | — | ~90 MB |
+
+卡上核数 9 → 11。两核的 `DT_NEEDED`（`libstdc++.so.6 libm.so.6 libmvec.so.1 libgcc_s.so.1
+libc.so.6`）在卡的 `/usr/lib/aarch64-linux-gnu` 全部能找到，5 个必需导出也都在，核自报名分别是
+`FinalBurn Neo` 与 `gpSP`。`neogeo.zip` 是必须的：FBNeo 在
+`<system_directory>/fbneo/<名字>` 找它的 BIOS 与父集（`locate_archive`，libretro.cpp:925-1000），
+`system_directory=/roms/bios`，缺它每个 NEOGEO 游戏停在 `Cannot find required rom`。
+
+**这轮只读盘查把两个假设定错了**，记下来免得再当前提用：
+
+1. 卡上那 22 GB **不包含任何街机内容**——`fbneo/ neogeo/ cps1/ cps2/ arcade/` 五个目录当时都只有
+   `.keep` 一行，`/roms/openbor` 和 `/roms/onscripter` **根本不存在**，`/roms/bios/` 里只有 `dc/`。
+   所以"卡上有游戏可测"对核成立、对街机不成立，街机内容是从 `I:` 包现拷的。
+2. 卡上两份 `es_systems.cfg` 的 sha **不一样**：`/etc/emulationstation/` 是 `447bd0d9`，
+   `/root/.emulationstation/` 是 `f8f311f3`，而 ES 先读后者——即生效的是 `/root` 那份。以前某轮
+   只手改过一边。因此 deploy 必须两份一起写（`deploy-engines.sh` 就是这么做的）。
+
+`es_systems.cfg` 这次**没写**：仓库那份新增了 `openbor` 与 `onscripter` 两个系统，而这两个引擎的
+二进制还没进卡。提前写的话，ES 会列出 27 个能选中、一按就报 `r36-openbor: not found` 的游戏——
+这种"看起来装机成功、点进去全红"的状态比暂时看不见更糟。等引擎编完，cfg 和 4 个引擎文件一次性
+写完再上机。
+
+
 **镜像内容只由配方决定，`scripts/image` 里那些自检不改一个字节**，所以加断言不需要重打。
 `1edb6129` 是**带着全部断言跑出来的**（PortMaster 四处、三个 SDL2 扩展库、Wi-Fi 菜单的子命令、
 回滚形状 + 两个 `.ko` 在场、launcher 两处标记、镜像里的 ES 与 `install_pkg` 逐字节相同、
