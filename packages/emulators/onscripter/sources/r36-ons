@@ -20,7 +20,16 @@ if [ -z "$rom" ] || [ ! -e "$rom" ]; then
 	exit 2
 fi
 
-game="$(dirname "$rom")"
+# ES gives the marker, so the game is its dirname. Hand-testing this launcher on a board
+# over ssh means typing the folder, and passing a folder here used to produce
+#   can't open any of 0.txt, 00.txt, nscript.dat and nscript.___
+# from onsyuri - an engine-shaped error for a launcher-shaped mistake, which cost a round
+# of blaming the game data. Take either form.
+if [ -d "$rom" ]; then
+	game="$rom"
+else
+	game="$(dirname "$rom")"
+fi
 if [ ! -d "$game" ]; then
 	echo "r36-ons: $game is not a directory" >&2
 	exit 3

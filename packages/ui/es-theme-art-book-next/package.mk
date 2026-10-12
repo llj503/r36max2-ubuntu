@@ -40,6 +40,27 @@ makeinstall_target() {
   # 简体中文 in the menu writes.  It is defaulted here because ES never applies it
   # itself: main.cpp:345-348 initialises gettext with an empty locale, so the UI
   # language is the environment.  r36-es reads this value and exports it.
+  #
+  # HideWindow is pinned because the whole product depends on it and the value it
+  # would otherwise inherit is a preprocessor branch, not a config: FileData.cpp:718
+  # reads it as `window->deinit(hideWindow)`, and only deinitRenderer=true reaches
+  # Renderer::deinit() -> destroyWindow() -> SDL_Quit() (Renderer.cpp:504-508, 318-336),
+  # which is the moment ES gives up DRM master. Measured on the board both ways: with
+  # master held by ES, fceumm and fbneoplus both die in `video_driver_init_internal()`
+  # and OpenBOR prints "SDL Failed to Init!!!! (kmsdrm not available)"; after an
+  # SDL_Quit() of the same kind, /sys/kernel/debug/dri/0/state names the game as the
+  # scanned-out framebuffer (retroarch / OpenBOR-ff / onsyuri) and each of them runs.
+  # Settings.cpp:362-366 already defaults it to true when neither _WIN32/X86/X86_64 is
+  # defined - this build defines none - so the pin does not change today's behaviour.
+  # It changes what a future ES rebuild or the menu switch in GuiMenu.cpp:1143 costs:
+  # false means every game on the card fails to start, silently, from the front end.
+  #
+  # The element has to be <bool>, not <string>: loadFile dispatches on the child name
+  # (Settings.cpp:526-533 reads "bool"/"int"/"float"/"string" separately), so a <string>
+  # with the same name is parsed into mStringMap and the bool keeps its default - the file
+  # would look right and do nothing. saveFile (Settings.cpp:473) writes it back as "bool",
+  # and only when it differs from mDefaultBoolMap, which is why the card's own copy has no
+  # HideWindow line at all: it equals the compiled default.
   mkdir -p ${INSTALL}/root/.emulationstation
   cat > ${INSTALL}/root/.emulationstation/es_settings.cfg <<'EOS'
 <!-- r36max2 default: select the installed art-book-next theme and the Simplified
@@ -48,6 +69,7 @@ makeinstall_target() {
 <config>
 	<string name="ThemeSet" value="art-book-next" />
 	<string name="Language" value="zh_CN" />
+	<bool name="HideWindow" value="true" />
 </config>
 EOS
   # ES also reads a system-wide copy for other accounts; the root one is what the device

@@ -13,6 +13,46 @@ RetroArch 本身（resolute 是 `retroarch 1.22.2+dfsg`），但**没有任何 l
 `es_systems.cfg` 有 135 个系统，**不能直接拿来用**：它依赖 ArkOS-ES 的 `%GOVERNOR%` 宏和
 `sudo perfmax/perfnorm` 辅助命令，路径也是 `/home/ark`。
 
+## 启动那一刻，显示器只能有一个人用
+
+这块板子上没有 X、没有 compositor，ES 和所有模拟器都是**同一个 DRM card0 的客户端**，
+而 DRM master 是独占的：谁先打开 `/dev/dri/card0` 谁是 master，别人 `drmSetMaster` 拿不到。
+所以"游戏打不开"这一大类问题的真正变量只有一个 —— **启动子进程的那一刻 ES 有没有放掉
+master**。这条链在两处代码上成立：
+
+* `FileData.cpp:718-721` 读 `HideWindow` 并 `window->deinit(hideWindow)`，只有 true 才会走到
+  `Renderer::deinit()` → `destroyWindow()` → `SDL_Quit()`（`Renderer.cpp:504-508, 318-336`），
+  而 `SDL_Quit()` 才是关掉了那个 card0 描述符、把 master 放回内核的动作；
+* 游戏退出后 `window->init(hideWindow)` 再把它抢回来。ES 自己在 `Settings.cpp:362-366` 的
+  默认值是 `#if defined(_WIN32) || defined(X86) || defined(X86_64) ? false : true`，
+  而这棵树 es-core 的 `CXX_DEFINES` 是
+  `-DHAVE_INTL -DHAVE_UDEV -DUSE_OPENGLES_30 -D_ENABLE_KODI_`（一个 X86 都没有），
+  所以我们编出来的默认就是 true —— 镜像能启动游戏靠的是这个，不是运气。
+
+两种状态都是**量出来的**，仪器是 `/sys/kernel/debug/dri/0/state`：它会把当前扫描输出的
+framebuffer 连它的分配者一起写出来（`allocated by = <15 字符的 comm>`）。ES 在跑时那一行是
+`emulationstatio`；让位之后同一行变成游戏自己：
+
+| 条件 | fceumm | fbneoplus(neogeo) | OpenBOR | ONScripter |
+| --- | --- | --- | --- | --- |
+| ES 持有 master（从 ssh 直接起） | `Fatal error in video_driver_init_internal()` | 同左 | `SDL Failed to Init!!!! (kmsdrm not available)` | 同左 |
+| 先 `SDL_Quit()` 再起（= ES 的启动条件） | 面板 `retroarch`，12 s 后被 timeout 杀 | 面板 `retroarch`，rc=124 | 面板 `OpenBOR-ff`，写出 `Saves/00x.cfg` | 面板 `onsyuri`，`Display: 640x480` + `Audio: 44100 Hz` |
+
+于是有两个看起来能用的东西被**否定**了，别再试：
+
+* `SDL_KMSDRM_REQUIRE_DRM_MASTER=0`（`libSDL2-2.0.so.0` 里确实有这个 hint，SDL 2.30.0）
+  —— 它只让 `SDL_Init` 返回 0，屏幕仍然归 ES：OpenBOR 带这个变量跑满 20 s，stdout 一路
+  `ERROR: Could not queue pageflip: -13`（EACCES），把"当场报错"变成"黑屏且看起来在跑"，
+  比原来更难诊断。
+* 让 wrapper 去 `systemctl stop r36-es` 再启动游戏 —— ES 是 `r36-es.service` 的主进程，
+  systemd 默认 `KillMode=control-group`，stop 会连同正在启动的子进程一起杀掉。真要这么
+  做只能 `systemctl kill --kill-who=main`，而既然 ES 自己有让位机制，就不该绕过它。
+
+因此镜像里唯一需要守住的默认值是 `HideWindow=true`，它已经钉在
+`packages/ui/es-theme-art-book-next/package.mk` 写出的 `es_settings.cfg` 里；用户侧要打破它
+只有菜单里那个开关（`GuiMenu.cpp:1143-1145`），一旦关掉，表现是**所有系统的所有游戏**
+点开就退回 ES，而且 ES 自己不报任何错。
+
 ## 现在装了哪些核，各自是怎么编出来的
 
 | 系统 | 核（`/usr/lib/libretro/`） | 上游 pin | 构建方式 | 这一步真正的坑 |
@@ -205,11 +245,17 @@ systemctl stop r36-es ; fuser /dev/dri/card0   # 必须是空的
   不解 submodule（实测六个目录 `files=0`）。选它就要再 pin 六个上游，所以走 standalone
   分支（CMakeLists.txt:46-70），代价只是 rootfs-apt 里多五个 `-dev` 包。
 
-**当前状态**（2026-10-12 下午）：两个引擎都编出来了，也进了镜像
+**当前状态**（2026-10-12 傍晚）：两个引擎都编出来并进了镜像
 （`0f17e54eee4bd3a7…`，`scripts/image` 自检 16 个系统全过、`!!` 计数 0）：
-`OpenBOR-ff` 1,733,800 B、`onsyuri` 610,760 B，都是 aarch64。**但一次都没上过机**——
-写卡在身份门前停下（读卡器从 Windows 的 USB 树上整个消失），而刷卡会抹掉 22.6 GB ROM，
-所以这一层现在是"构建侧全绿、屏幕侧零证据"。卡上已经有的是两个核 + 游戏 + `neogeo.zip`。
+`OpenBOR-ff` 1,733,800 B、`onsyuri` 610,760 B，都是 aarch64。**上机证据已经有了，但都是在
+"显示已经让出来"的条件下拿到的**：卡上 dpkg 装上 `liblua5.4-0` 之后，`r36-ons` 打到游戏目录
+里的 `stdout.txt` 给出 `Display: 640 x 480 (32 bpp)` + `Audio: 44100 Hz 16 bit stereo` +
+`Open GameController 0`，`/sys/kernel/debug/dri/0/state` 里扫描输出的 framebuffer 分配者写成
+`onsyuri`；OpenBOR 同理是 `OpenBOR-ff`，而且 `/roms/.config/openbor/Saves/` 里出现
+`001.cfg 002.cfg 025.cfg`（进了主菜单才会写）。**还缺的是真从 ES 里按 A 那一次**——上面的
+表格是"先 SDL_Quit 再起子进程"的等价复现，不是 ES 本身；钩子已经装在卡的
+`/root/.emulationstation/scripts/game-start/90-panel.sh`，它会连续 8 秒记录面板归属、
+ES 手里还剩几个 card0 描述符、以及当时在跑的进程，下一次按键就把这最后一个缺口填上。
 
 三个坑只有真编一次才看得见，都记在这儿，因为它们的共同点是**构建日志里不会出现错误**：
 
