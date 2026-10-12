@@ -20,6 +20,21 @@ makeinstall_target() {
   install -m 755 ${PKG_DIR}/r36-es ${INSTALL}/usr/local/bin/r36-es
   install -m 755 ${PKG_DIR}/r36-play ${INSTALL}/usr/local/bin/r36-play
 
+  # The built-in pad needs a RetroArch autoconfig profile or no game has any input
+  # (measured on the board: "[Autoconf] retrogame_joypad (18507/4353) not configured." and
+  # then dead buttons). Where it goes was tested, not assumed, because the two obvious
+  # places do not work on this build:
+  #   /usr/share/libretro/autoconfig/udev  -> still "not configured" - not searched
+  #   input_autoconfig_dir = "..."         -> still "not configured" - key not honoured
+  #   ${HOME}/.config/retroarch/autoconfig/udev -> "[Autoconf] R36 Max 2 Joypad
+  #                                                  configured in port 1."
+  # and r36-play runs RetroArch as root with HOME=/root (r36-es.service sets it), so the
+  # one directory RetroArch reads here is /root/.config/... - the same reason ES's own
+  # config ships under /root/.emulationstation.
+  mkdir -p ${INSTALL}/root/.config/retroarch/autoconfig/udev
+  install -m 644 ${PKG_DIR}/autoconfig/udev/retrogame_joypad.cfg \
+    ${INSTALL}/root/.config/retroarch/autoconfig/udev/retrogame_joypad.cfg
+
   # Boot straight into ES. Without this the device comes up on the console status page
   # and ES has to be started by hand over SSH, which is not a thing a handheld can do.
   mkdir -p ${INSTALL}/usr/lib/systemd/system

@@ -490,6 +490,19 @@ ncores=$(SUDO ls "${MNT}/root/usr/lib/libretro"/*_libretro.so 2>/dev/null | wc -
 v "  libretro cores: ${ncores} ($(SUDO ls "${MNT}/root/usr/lib/libretro" 2>/dev/null | tr '\n' ' '))"
 [ "${ncores}" -ge 1 ] || { v "  !! no libretro core installed - every system would fail to launch"; fail=1; }
 
+# A game that starts, displays and ignores every button press is the failure the board
+# showed on the first successful launch, and nothing about it looks like an image problem:
+# RetroArch logs "[Autoconf] retrogame_joypad (18507/4353) not configured." and carries on.
+# The pad is a platform device, so its evdev name is what the profile has to match, and
+# that name comes from this board's DT (rocknix-singleadc-joypad) - pinned here as the
+# string the recipe installs, with the same spelling the board reports in
+# /proc/bus/input/devices. The profile also has to sit in the one directory this
+# RetroArch build reads; see the es-launcher recipe for what was tested.
+RAPROF="${MNT}/root/root/.config/retroarch/autoconfig/udev/retrogame_joypad.cfg"
+SUDO grep -q '^input_device = "retrogame_joypad"$' "${RAPROF}" 2>/dev/null \
+  || { v "  !! no RetroArch autoconfig profile for retrogame_joypad - in-game controls would be dead"; fail=1; }
+v "  input autoconfig: $(SUDO ls "${MNT}/root/root/.config/retroarch/autoconfig/udev" 2>/dev/null | tr '\n' ' ')"
+
 # A count cannot catch the two failures that actually happened on this board: a <core>
 # name that does not match the installed library's stem (r36-play turns it into a file
 # name, so the game dies at launch with nothing wrong in the image), and a <path> whose
