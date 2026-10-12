@@ -343,57 +343,73 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
     was_id=$(current_network_id)
 
     start_supplicant || { [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
-    put_network "$ssid" "$(build_block "$ssid" "$psk")" "$country" || {
-        [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
 
     # `iw reg set` restarts the channel, and on this chip that is not free. Only touch it
     # when the country is actually changing.
     [ "$(iw_reg_country)" = "$country" ] || $IW reg set "$country" 2>/dev/null
 
-    # Ask the running daemon to re-read the file. NOT `systemctl restart` - but do not read
-    # that as a cure, because it is not one: the boot that ran with zero restarts still
-    # wedged the chip (34 refused associations in 86 minutes, see driver_reset). Removing the
-    # restart only removed one way of provoking it. reload_config is still the lesser evil
-    # here: it rebuilds the runtime networks from the file, so ids and blocks stay in step.
-    reload=$($CTL reload_config 2>&1)
+    # Build the network INSIDE the running daemon, with the commands whose names were
+    # verified against the binary on this card (`strings /usr/sbin/wpa_cli` has
+    # add_network / set / select_network / enable_network / remove_network / reconfigure,
+    # and does NOT have `reload`).
+    #
+    # This replaces a file rewrite plus `reload_config`, and that older design is the bug
+    # the 2026-10-12 audit caught red-handed:
+    #     reload=[Unknown command 'reload_config'] runtime_id=none bss=yes
+    # `reload_config` is not a wpa_cli command at all, so every one of those calls had been
+    # failing since the script existed - invisibly, because the reply went to /dev/null.
+    # The file was written correctly, the access point was in the scan table, and the daemon
+    # had never been told about the new network, so `network_id_for` found nothing, there was
+    # nothing to select, and the user was told "failed to connect" about a network that had
+    # never once been attempted and a passphrase that had never been tested.
+    # Writing the file stays, but only to persist a connection that already worked.
+    id=$($CTL add_network 2>&1)
+    case "$id" in
+        ''|FAIL*) audit "connect: add_network said [$id]";
+            [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1 ;;
+    esac
 
-    # Then ask for THAT network by id: without select_network the daemon chooses among the
-    # blocks itself, so "connect to X" could end up associated somewhere else and the ssid
-    # check below would report failure for a connection that had actually worked.
-    id=$(network_id_for "$ssid")
+    # Every reply is captured and audited.  That is the whole lesson of this bug: the
+    # commands were being issued correctly and discarded, so a daemon answering "Unknown
+    # command" was indistinguishable from one doing exactly as told.
+    ssid_reply=$($CTL set network "$id" ssid "$ssid" 2>&1)
+    if [ -n "$psk" ]; then
+        # The plaintext, both AKMs, MFP optional - the same parameters build_block writes,
+        # and a hashed psk cannot do SAE, which is why the menu stores plaintext at all.
+        keymgmt_reply=$($CTL set network "$id" key_mgmt 'WPA-PSK SAE' 2>&1)
+        psk_reply=$($CTL set network "$id" psk "\"$psk\"" 2>&1)
+        proto_reply=$($CTL set network "$id" proto 'WPA RSN' 2>&1)
+        mfp_reply=$($CTL set network "$id" ieee80211w 1 2>&1)
+    else
+        keymgmt_reply=$($CTL set network "$id" key_mgmt NONE 2>&1)
+        psk_reply="(open)"
+        proto_reply=$($CTL set network "$id" proto 'WPA RSN' 2>&1)
+        mfp_reply=$($CTL set network "$id" ieee80211w 0 2>&1)
+    fi
+    # Ask for it by directed probe too, so a hidden or briefly-absent SSID can still be
+    # found instead of timing out silently.
+    scanssid_reply=$($CTL set network "$id" scan_ssid 1 2>&1)
+    audit "connect ssid=\"$ssid\" new_id=$id was_id=${was_id:-none} ssid_reply=[$ssid_reply] keymgmt_reply=[$keymgmt_reply] psk_reply=[$psk_reply] proto_reply=[$proto_reply] mfp_reply=[$mfp_reply] scanssid_reply=[$scanssid_reply] bss=$(bss_seen "$ssid") scan_rows=$(scan_rows | wc -l) state=$(wpa_state) country=$country"
 
-    # Everything the next post-mortem needs, in one line, on stderr - because stderr from
-    # this script reaches the journal (measured: the "wifictl: still on …" lines are in
-    # journalctl) and this board has no keyboard, no serial and no screen that can show any
-    # of it.  The 2026-10-12 morning attempt failed with FOUR possible causes that the log
-    # could not separate: reload refused, the block never became a runtime network, the BSS
-    # not in the scan table, or the driver refusing to scan (-EBUSY, "is scanning, abort").
-    # It also could not say whether the passphrase was ever tested, which is the one question
-    # the user is actually asking.
-    audit "connect ssid=\"$ssid\" reload=[$reload] runtime_id=${id:-none} was_id=${was_id:-none} bss=$(bss_seen "$ssid") scan_rows=$(scan_rows | wc -l) state=$(wpa_state) country=$country"
-
-    # A missing runtime network is a hard failure, not something to wait 40 seconds for.
-    # The version before this one had `if [ -n "$id" ]` with no else here: when the daemon
-    # did not take the block, the script silently skipped select_network, then reported a
-    # timeout - which is exactly the "nothing tried, password never tested" shape seen in
-    # the 2026-10-12 journal, and it looked like a wrong-key failure from the outside.
-    [ -n "$id" ] || { err "connect: the daemon did not load a network for \"$ssid\" (reload said [$reload])";
-        [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
+    # A rejected parameter is a hard failure, not something to wait 40 seconds for.
+    for r in "ssid=$ssid_reply" "key_mgmt=$keymgmt_reply" "psk=$psk_reply" "proto=$proto_reply" "ieee80211w=$mfp_reply"; do
+        case "$r" in
+            *=OK) continue ;;
+            *) err "connect: the daemon refused set $r"; $CTL remove_network "$id" >/dev/null 2>&1
+               [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1 ;;
+        esac
+    done
 
     $CTL enable_network "$id" >/dev/null 2>&1
     $CTL select_network "$id" >/dev/null 2>&1
 
     # If the SSID is not in the daemon's scan table, naming the network is not enough: wpa
     # associates with a BSS, not with an ssid string, so a select with no matching BSS just
-    # waits for someone else to find it.  This is the mechanism that best fits the 2026-10-12
-    # sample - the chip was healthy, the good network stayed COMPLETED for the entire 40
-    # seconds, and no "Trying to associate" for the requested SSID ever appeared - and
-    # reload_config above is exactly the step that can drop the scan results the menu had
-    # just collected.  So ask for a scan and record whether the BSS turned up.  If it stays
-    # absent, that is the answer, and it is not a passphrase question.  Unproven, which is
-    # why it is audited instead of asserted.
+    # waits for someone else to find it.  Ask for a scan and record whether the BSS turned
+    # up, because "absent" is a different answer from "the AP refused us" - and neither is
+    # a passphrase problem.
     if [ "$(bss_seen "$ssid")" = no ]; then
-        audit "connect: \"$ssid\" absent from the scan table after reload - requesting a scan"
+        audit "connect: \"$ssid\" absent from the scan table - requesting a scan"
         $CTL scan >/dev/null 2>&1
         i=0
         while [ $i -lt 10 ]; do
@@ -405,8 +421,18 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
         $CTL select_network "$id" >/dev/null 2>&1
     fi
 
-    connected_ok "$ssid" || { [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
+    if connected_ok "$ssid"; then
+        # It worked, so make it survive a reboot.  If the file write is refused (the parse
+        # gate in publish_tmp is there because one unparsable block kills every OTHER
+        # network on this card), say so rather than letting "connected" imply "saved".
+        put_network "$ssid" "$(build_block "$ssid" "$psk")" "$country" ||
+            audit "connected to \"$ssid\", but it could NOT be written to $CONF - it will not survive a reboot"
+        return 0
+    fi
+    [ -z "$SNAP" ] || restore_snapshot "$ssid"
+    return 1
 }
+
 
 # What country the wireless core reports right now, or nothing if that cannot be read.
 iw_reg_country() {
@@ -512,18 +538,21 @@ driver_reset() {
     return 1
 }
 
-# Put the pre-attempt configuration back.  This is the path that decides whether a failed
-# attempt costs the user their working connection, so it is written around what was actually
+# Put the pre-attempt state back.  This is the path that decides whether a failed attempt
+# costs the user their working connection, so it is written around what was actually
 # measured on this chip, not around what wpa_supplicant normally needs:
 #
-#   * the block the attempt added is removed from the RUNNING daemon first (`remove_network`),
+#   * the block the attempt added is removed from the RUNNING daemon (`remove_network`),
 #     because leaving it there makes the daemon retry that network forever - that is the whole
-#     reason the first version of this function was wrong.  remove_network, not reload_config:
-#     reload re-reads the file and re-enables every block in one go, and the re-association it
-#     triggers is what this chip dies on (see driver_reset).  forget_saved has used
-#     remove_network all along and was measured to keep the link UP.
-#   * then the file is put back so runtime and file agree again (the block removed here was
-#     appended last, so the surviving ids do not shift).
+#     reason the first version of this function was wrong.
+#   * the file is only restored if it was ever touched.  Since 2026-10-12 the attempt is built
+#     with add_network and the file is written only after a connection that already worked, so
+#     in the normal failure path there is nothing in the file to undo; the copy back is a
+#     no-op kept for the paths that do write.
+#   * nothing here re-reads the configuration any more, and that is deliberate: the one time
+#     this function ended with a reload plus an unconditional reassociate, it printed
+#     "back on … (COMPLETED)" and then destroyed that association 14 seconds later, and the
+#     chip spent the rest of the boot refusing scans (see driver_reset).
 #   * if the link did not come back on its own, reset the driver. Without that the board
 #     stays offline until someone opens it - which is what happened on 2026-10-10: the
 #     journal shows one association rejected by the driver at 14:42:16, then 34
@@ -588,18 +617,25 @@ cmd_connect_saved() {  # $1 = ssid already present in $CONF
 
     id=$(network_id_for "$ssid")
     if [ -z "$id" ]; then
-        # saved in the file but not loaded (added while the supplicant was down, or by an
-        # edit that never reached the daemon) - let it re-read the file rather than
-        # restarting the service, for the reason spelled out in cmd_connect
-        $CTL reload_config >/dev/null 2>&1
+        # Saved in the file but not loaded (added while the supplicant was down, or by an
+        # edit that never reached the daemon).  The command is `reconfigure` - which is what
+        # this card's wpa_cli actually has; `reload_config`, used here until 2026-10-12, is
+        # not a command at all and answered "Unknown command" every time, invisibly, because
+        # the reply was thrown away.  Keep the reply and say what it was.
+        rc=$($CTL reconfigure 2>&1)
+        audit "connect_saved: reconfigure said [$rc] for \"$ssid\""
         sleep 2
         id=$(network_id_for "$ssid")
     fi
     [ -n "$id" ] || { err "connect_saved: \"$ssid\" is not saved"; return 1; }
 
+    # select_network is the whole request: it disconnects from anything else and joins this
+    # network.  The extra `reassociate` that used to follow it was a second disconnect on top
+    # of the first, measured on this chip as the difference between "rejoined" and "stuck".
     $CTL enable_network "$id" >/dev/null 2>&1
-    [ "$($CTL select_network "$id" 2>&1)" = FAIL ] && { err "connect_saved: select_network refused"; return 1; }
-    $CTL reassociate >/dev/null 2>&1
+    sel=$($CTL select_network "$id" 2>&1)
+    audit "connect_saved: id=$id select_network=[$sel] state=$(wpa_state)"
+    [ "$sel" = FAIL ] && { err "connect_saved: select_network refused ([$sel])"; return 1; }
 
     connected_ok "$ssid" || return 1
 }
