@@ -1070,7 +1070,18 @@ calculate_stamp() {
   [ -n "$DEVICE" ] && stamp+=" $PROJECT_DIR/$PROJECT/devices/$DEVICE/patches/$PKG_NAME"
   [ -n "$PKG_NEED_UNPACK" ] && stamp+=" $PKG_NEED_UNPACK"
 
-  data="$(find -L ${stamp} -type f -not -name '.*' -print0 2>/dev/null | sed -z "s|^${ROOT}/||" | LC_ALL=C sort -zu | xargs -0 sha256sum)"
+  # The paths are stripped to $ROOT-relative so a stamp does not bake in the machine's
+  # checkout location - which means sha256sum can only read them if it runs FROM $ROOT.
+  # Three call sites (scripts/build, scripts/install, scripts/unpack) and not all of them
+  # control where the shell is: package hooks run in this same shell (pkg_call calls the
+  # function directly, config/functions:1168-1174), so a hook that does `cd ${PKG_BUILD}`
+  # leaves the next calculate_stamp to fail on every one of its own files, and the stamp
+  # silently becomes the hash of empty input. Measured on openbor-ff: its .rocknix-unpack
+  # recorded 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b, which is
+  # exactly `echo '' | sha256sum`, while packages with no cd-ing hook carry real content
+  # hashes there - and the log said `sha256sum: packages/.../package.mk: No such file or
+  # directory` for each of them. cd here makes the result independent of the caller.
+  data="$(find -L ${stamp} -type f -not -name '.*' -print0 2>/dev/null | sed -z "s|^${ROOT}/||" | LC_ALL=C sort -zu | { cd "${ROOT}" 2>/dev/null || cd /; xargs -0 sha256sum; })"
   [ -n "${PKG_STAMP}" ] && data+=$'\n'"$(echo "${PKG_STAMP}" | sha256sum)"
 
   echo "${data}" | sha256sum | cut -d" " -f1

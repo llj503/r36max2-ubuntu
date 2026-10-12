@@ -41,6 +41,12 @@
 # the framework already provides (the measured sdl2.pc lives in lib/aarch64-linux-gnu/, not
 # usr/lib/), so the recipe inherits instead of re-declaring.
 #
+# PKG_DIR/sources/ is not just a folder name in this framework: scripts/unpack:65 treats its
+# existence as "this package needs the private unpack path", and scripts/unpack:107-109 copies
+# its contents INTO the unpacked tree. Measured after a build: ${PKG_BUILD}/r36-openbor
+# exists, mode 644. Harmless here - makeinstall_target installs the repo copy with -m 755 -
+# but it is why this directory is not named something else.
+#
 # The tarball is 189 MB because GitHub's archive includes media/; it is fetched once.
 
 PKG_NAME="openbor-ff"
@@ -57,21 +63,28 @@ PKG_LONGDESC="OpenBOR engine (fflns fork, SDL_GameController input), built for a
 PKG_TOOLCHAIN="make"
 
 post_patch() {
-  cd ${PKG_BUILD} || return 1
+  # No `cd` in here, on purpose. pkg_call runs the hook in the same shell
+  # (config/functions:1168-1174), and scripts/unpack writes its unpack stamp right after this
+  # returns - calculate_stamp hashes PKG_DIR through paths made relative to $ROOT, so a hook
+  # that leaves the shell in ${PKG_BUILD} makes every one of those reads fail and the stamp
+  # becomes the hash of empty input. Measured: this version's first build stored
+  # 01ba4719... in .rocknix-unpack, which is exactly `echo '' | sha256sum`, while every
+  # package whose hooks do not cd has a real content hash there.
+  local BUILD=${PKG_BUILD}
 
   # scripts/unpack pipes `patch` through and never checks its exit status, and the build
   # then deletes every .rej, so a patch that silently failed to apply looks identical to
   # one that applied. Assert the content each one introduces instead.
-  if ! grep -q 'BUILD_LINUX_aarch64' engine/Makefile; then
+  if ! grep -q 'BUILD_LINUX_aarch64' ${BUILD}/engine/Makefile; then
     die "openbor-ff: patch 0002 did not apply - no BUILD_LINUX_aarch64 block in engine/Makefile"
   fi
-  if ! grep -q 'SDL_GameControllerOpen' engine/sdl/control.c; then
+  if ! grep -q 'SDL_GameControllerOpen' ${BUILD}/engine/sdl/control.c; then
     die "openbor-ff: patch 0001 did not apply - engine/sdl/control.c still has no SDL_GameControllerOpen, which is the input path this fork exists for"
   fi
   # The old joystick API has to be gone, not merely joined by the new one: if both are
   # live the engine reads events twice, which shows up as every button press doing two
   # things and no error anywhere.
-  if grep -q 'SDL_JoystickOpen' engine/sdl/control.c; then
+  if grep -q 'SDL_JoystickOpen' ${BUILD}/engine/sdl/control.c; then
     die "openbor-ff: engine/sdl/control.c still calls SDL_JoystickOpen - the 0001 refactor is only half applied"
   fi
 }
