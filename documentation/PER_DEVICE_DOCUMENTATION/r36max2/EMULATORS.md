@@ -204,12 +204,43 @@ systemctl stop r36-es ; fuser /dev/dri/card0   # 必须是空的
   不解 submodule（实测六个目录 `files=0`）。选它就要再 pin 六个上游，所以走 standalone
   分支（CMakeLists.txt:46-70），代价只是 rootfs-apt 里多五个 `-dev` 包。
 
-**当前状态**：`rootfs-apt` 补的那批 `-dev` 包（`libsdl2-gfx-dev libvpx-dev` +
-`libsdl2-ttf-dev libsdl2-image-dev libjpeg-turbo8-dev libbz2-dev lua5.4-dev`）正在重新拉闭包，
-两个引擎配方已经写好但**还没编过**，更没进过卡。`packages/emulators/*/*/sources/` 之所以能
-进 git，是因为 `.gitignore` 里那条 `sources/` 收窄成了 `/sources/` —— 原来那条不带锚点，
-把包自己的 `sources/` 也吞了：wrapper 文件躺在磁盘上 git 看不见，只有推完之后在构建机上
-`install` 那行才会暴露"文件不存在"。
+**当前状态**（2026-10-12 下午）：两个引擎都编出来了，也进了镜像
+（`0f17e54eee4bd3a7…`，`scripts/image` 自检 16 个系统全过、`!!` 计数 0）：
+`OpenBOR-ff` 1,733,800 B、`onsyuri` 610,760 B，都是 aarch64。**但一次都没上过机**——
+写卡在身份门前停下（读卡器从 Windows 的 USB 树上整个消失），而刷卡会抹掉 22.6 GB ROM，
+所以这一层现在是"构建侧全绿、屏幕侧零证据"。卡上已经有的是两个核 + 游戏 + `neogeo.zip`。
+
+三个坑只有真编一次才看得见，都记在这儿，因为它们的共同点是**构建日志里不会出现错误**：
+
+1. OpenBOR 的链接命令是 `$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(RES) $(LIBS)`，**根本没有
+   `LDFLAGS`**。框架的 `-rpath-link` 只在 `LDFLAGS` 里（config/functions:459），于是 libSDL2.so
+   自己的 DT_NEEDED 一个都找不到：满屏 `undefined reference to 'XFree'` +
+   `warning: libX11.so.6, needed by …/libSDL2.so, not found`。那些库一个都不缺，缺的是
+   `-rpath-link`——传递依赖不认 `-L`。修法是把那两个目录并进导出的 `CFLAGS`（这个 Makefile
+   只有 `CFLAGS +=`，所以继承的值会留下；写 `CFLAGS=` 到命令行反而会吃掉引擎自己的 `-D/-I/-O`）。
+2. onsyuri 链接的是字面量 `lua`，而 Ubuntu 的 `lua5.4-dev` 只给 `liblua5.4.so`。同一份 cmake 输出
+   里上一行明明写着 `Found Lua: …/liblua5.4.so (5.4.8)`——找到没用，链接不看它找到的东西。
+   自己的补丁 0001 把 `lua` 换成 `${LUA_LIBRARIES}`；副作用是 `DT_NEEDED` 从 dev 符号链接名变成
+   带版本的 `liblua5.4.so.0`，这本来就是更对的写法。
+3. `MinSizeRel` 会加 `-flto`（CMakeLists.txt:16-19），而这个交叉 gcc 没编 LTO 支持，
+   `cc1plus: error: LTO support has not been enabled in this configuration` 是硬错误。
+   **这是这台机器上第四个踩同一面墙的包**（mgba 的 `-DBUILD_LTO=OFF`、satune 的 `LTO=0`），
+   我还是先信了上游的建议。改成 `Release`，`-s` 由 `${STRIP}` 自己做。
+
+还有一条是这一轮翻出来的框架级问题：**包钩子里一个 `cd` 就能把构建缓存打成废**。
+`calculate_stamp` 先把路径削成相对 `$ROOT` 再去哈希，而 `pkg_call` 不套子 shell
+（config/functions:1168-1174），所以我 `post_patch()` 里那句 `cd ${PKG_BUILD}` 一路带到
+scripts/unpack 写 stamp 的那一刻。实测后果：openbor-ff 的 `.rocknix-unpack` 存的是
+`01ba4719…`，正是 `echo '' | sha256sum`，即"内容哈希 = 空输入的哈希"。方向是 survivable 的
+（真哈希 vs 空值永远不等 → 每次重编，不会 ship 旧的），但缓存从此不起作用。修法是把 `cd`
+放进函数里，验证是同一包在错的 CWD 下现在也给出真哈希。附带量出一个之前不知道的事实：
+`${PKG_DIR}/sources/` **是有语义的**——`scripts/unpack:65` 见它就改走私有 unpack 路径，
+`:107-109` 还会把里面的东西拷进源码树（实测 `${PKG_BUILD}/r36-openbor` 出现，mode 644）。
+
+`packages/emulators/*/*/sources/` 之所以能进 git，是因为 `.gitignore` 里那条 `sources/` 收窄成了
+`/sources/` —— 原来那条不带锚点，把包自己的 `sources/` 也吞了：wrapper 文件躺在磁盘上 git
+看不见，只有推完之后在构建机上 `install` 那行才会暴露"文件不存在"。
+
 
 ## 还没做
 

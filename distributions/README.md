@@ -38,7 +38,7 @@
 没有刷进卡里** —— 卡上跑的还是 `7d5cc138` 那份底子 + 手工补齐的层（下面第三节），因为刷一次就抹掉
 那 22.6 GB ROM。真正在屏幕上验过的东西写在最后一节。
 
-从 10-10 到 10-12 上午，v21 打过八次。记全是为了别把"量过的哈希"和"卡在跑的东西"混起来：
+从 10-10 到 10-12 下午，v21 打过九次。记全是为了别把"量过的哈希"和"卡在跑的东西"混起来：
 
 | 哈希 | 时间 | 里面是什么 | 状态 |
 | --- | --- | --- | --- |
@@ -50,7 +50,32 @@
 | `6d1a7f2b` | 10-10 16:44 | 同上 + 回滚改用 `remove_network`、加驱动复位 | 被取代 |
 | `c8c34754` | 10-12 08:42 | 同上 + 审计行、`status` 字段两种写法都吃 | 被取代 |
 | `d68cc9e9` | 10-12 09:06 | 同上 + 连接改成运行时 `add_network`（不再重读文件） | 被取代 |
-| **`1edb6129`** | 10-12 09:28 | 同上 + **`set_network` 这个动词名修对**（`wifictl 83bcff2a`） | **当前这棵树的产物** |
+| `1edb6129` | 10-12 09:28 | 同上 + **`set_network` 这个动词名修对**（`wifictl 83bcff2a`） | 被取代；**卡现在跑的就是这一版的底子** |
+| **`0f17e54e`** | 10-12 13:27 | 同上 + **两个新核**（`fbneoplus`、`gpsp_ezode`）**+ 两个独立引擎**（`OpenBOR-ff`、`onsyuri`）+ 各自的 launcher，ES 系统 8 → 16 | **当前这棵树的产物；还没刷进卡，也一次都没上机** |
+
+`0f17e54e` 相对 `1edb6129` 多的一层，全部是模拟器侧（890,895,268 B，比上一版大 26,617,480 B，
+主要是 FBNeo 那 70 MB 未压缩的核）：
+
+* 核：`libretro-fbneoplus`（pin `8ebb4eea`，`platform=aarch64`，产物 70,361,112 B，53 个
+  `retro_*` 导出，自报名 `FinalBurn Neo`）、`libretro-gpsp-ezode`（pin `b4918c36`，
+  `platform=arm64`，1,175,504 B，链接行里有 `./arm/arm64_stub.o` 与 `-DHAVE_DYNAREC
+  -DARM64_ARCH`，所以 dynarec 是在的而不是又一个解释器）。
+* 引擎：`openbor-ff`（fflns fork，带 0001 SDL_GameController 与 0002 aarch64 两个补丁；
+  1,733,800 B）与 `onscripter`（上游 `YuriSizuku/OnscripterYuri`；610,760 B）。
+* launcher：`/usr/local/bin/r36-openbor`、`/usr/local/bin/r36-ons`（两个引擎都不吃 rom
+  参数，各自要一个包装；`/roms/.config/openbor` 是它们的运行目录）。
+* 系统条目 8 → 16：新增 `fbneo neogeo arcade cps1 cps2 openbor onscripter`，gba 多一个可选核
+  `gpsp_ezode`。打包自检逐条对过：**每个 `<core>` 都在镜像里有同名 `.so`，每个 `<path>`
+  都存在且非空**，日志里 `!!` 计数为 0。
+
+这一版里有三条是**构建过程本身教出来的**，写在
+[EMULATORS.md](../documentation/PER_DEVICE_DOCUMENTATION/r36max2/EMULATORS.md)：OpenBOR 的
+`-rpath-link`（它的链接命令只看 `$(CFLAGS)`，框架的 rpath-link 在 LDFLAGS 里）、onscripter 的
+`-llua`（Ubuntu 没有 `liblua.so`，而 `FindLua` 明明已经报`Found Lua: …/liblua5.4.so`），以及
+`MinSizeRel` 会带来的 `-flto`——这个交叉 gcc 没有 LTO，是硬错误。还有一条框架级的：
+`calculate_stamp` 现在自己在 `$ROOT` 里算哈希，因为包钩子里一个 `cd` 就能把 stamp 打成
+"空输入的哈希"（详见该文件 #46 那段）。
+
 
 **中间那六版有一个共同点：它们的 `wifictl` 全都连不上第二个网络**，原因不是芯片也不是口令，
 而是脚本里用的 `reload_config` / `set network` 两个动词在这台机器的 `wpa_cli` 里**根本不存在**
@@ -132,10 +157,16 @@ libc.so.6`）在卡的 `/usr/lib/aarch64-linux-gnu` 全部能找到，5 个必�
    `/root/.emulationstation/` 是 `f8f311f3`，而 ES 先读后者——即生效的是 `/root` 那份。以前某轮
    只手改过一边。因此 deploy 必须两份一起写（`deploy-engines.sh` 就是这么做的）。
 
-`es_systems.cfg` 这次**没写**：仓库那份新增了 `openbor` 与 `onscripter` 两个系统，而这两个引擎的
-二进制还没进卡。提前写的话，ES 会列出 27 个能选中、一按就报 `r36-openbor: not found` 的游戏——
-这种"看起来装机成功、点进去全红"的状态比暂时看不见更糟。等引擎编完，cfg 和 4 个引擎文件一次性
-写完再上机。
+`es_systems.cfg` 这次**没写**，两个引擎的二进制也**没写**：写卡进行到身份门就停了——读卡器
+在 Windows 的 USB 树上整个消失（`usbipd list` 里 `5-2` 已经不存在，只剩两条 persisted GUID），
+不是 WSL 侧掉附件那么简单。门的作用是**一个字节都没写**，日志里 `ABORT: gate`，卡上仍是
+上面那五行新增内容。`deploy-engines.sh` 已经把 payload 全查过一遍并打出 sha
+（`OpenBOR-ff 5e37c149`、`onsyuri 533aa418`、`r36-openbor f5de1305`、`r36-ons 355e6ecc`、
+`es_systems.cfg 9eb8a33c`），重插读卡器后直接重跑即可。
+
+没提前写 cfg 的原因是仓库那份新增了 `openbor` 与 `onscripter` 两个系统，而这两个引擎的二进制
+还没进卡：ES 会列出 27 个能选中、一按就报 `r36-openbor: not found` 的游戏——这种"看起来装机
+成功、点进去全红"的状态比暂时看不见更糟。
 
 
 **镜像内容只由配方决定，`scripts/image` 里那些自检不改一个字节**，所以加断言不需要重打。
