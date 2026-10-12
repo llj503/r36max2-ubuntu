@@ -29,13 +29,27 @@
 # (Mesa/Panfrost, GLES 3.1 on a Mali-G31 - measured from RetroArch's own log) and is the
 # reason libgles-dev being in the rootfs matters here rather than being decorative.
 #
-# NOT GAME-VERIFIED, stated plainly: I:\寨中寨EE4.7通用游戏包128G has no visual-novel
-# content - no nscript.dat, no *.nsa, no *.ons anywhere at depth 2, and the only directory
-# whose name suggests it is advision, which is the Matty Adventure Vision handheld. The
-# reference distro ships no VN games either; its onscripter system is populated by a
-# Scan_for_new_games.ons script the user runs themselves. So this recipe is verified to
-# build, to install, to be listed by ES, and to be launched - the "engine starts and shows
-# its own no-game error" is as far as it goes until actual games are put on the card.
+# GAME CONTENT: found, after an earlier version of this header claimed it did not exist.
+# My first search looked only in I:\寨中寨EE4.7通用游戏包128G and concluded "no visual-novel
+# content"; the user then pointed at a second volume, I:\ONS游戏资源\迷你龙ONS包\ONS, which
+# holds 37 games (33 GB). Measured across all of them: 26 carry nscript.dat, 11 carry
+# 0.txt/00.txt instead, and NOT ONE of the 26 nscript.dat files starts with the gzip magic.
+# That is not a broken pack - it is the format, and the loader says so:
+# ScriptHandler.cpp:1000-1017 opens 0.txt/00.txt with encrypt_mode=0 (plain text) and
+# nscript.dat with encrypt_mode=1, i.e. the engine decrypts that one itself. Reading the
+# loader is what turned "this looks encrypted, maybe it will not run" into a fact instead of
+# a worry.
+#
+# No .ons marker exists anywhere in that pack (searched at depth 3): the reference distro
+# generates them with its own Scan_for_new_games.ons. The marker is therefore ours to
+# create, and r36-ons launches the marker's DIRECTORY.
+#
+# Saves, measured in setArchivePath (ONScripter.cpp:430-437): it appends DELIMITER to the
+# path it is given, and every save is sprintf("%ssave%d.dat", save_dir ? save_dir :
+# archive_path, n), with stdout.txt/stderr.txt landing in the same place. So without
+# -save-dir the game keeps its saves inside its own folder - which is why the games have to
+# live on the writable ROM partition (/roms/onscripter/<game>/) and why passing -r without a
+# trailing slash is safe.
 
 PKG_NAME="onscripter"
 PKG_VERSION="08f744b31cc1907b66a15f0402e62321a131ed81"
