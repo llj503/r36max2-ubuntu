@@ -497,26 +497,63 @@ v "  libretro cores: ${ncores} ($(SUDO ls "${MNT}/root/usr/lib/libretro" 2>/dev/
 # instead of the totals: every system in the shipped cfg, every core it names, every
 # directory it scans.
 ESCFG="${MNT}/root/etc/emulationstation/es_systems.cfg"
+RPLAY="${MNT}/root/usr/local/bin/r36-play"
 esmap=$(SUDO cat "$ESCFG" 2>/dev/null | awk '
-  /<system>/{n="";p="";c=""}
+  /<system>/{n="";p="";c="";d=""}
   /<name>/{sub(/.*<name>/,"");sub(/<\/name>.*/,"");n=$0}
   /<path>/{sub(/.*<path>/,"");sub(/<\/path>.*/,"");p=$0}
+  /<command>/{sub(/.*<command>/,"");sub(/<\/command>.*/,"");d=$0}
   /<core>/{sub(/.*<core>/,"");sub(/<\/core>.*/,"");c=c" "$0}
-  /<\/system>/{if(n!="")print n"\t"p"\t"c}')
+  /<\/system>/{if(n!="")print n"\t"p"\t"c"\t"d}')
+# The other half of the same contract: r36-play's fallback table. ES leaves "-core %CORE%"
+# with an empty value until the user picks a core (FileData.cpp:552 only appends the flags
+# for netplay), so the directory has to be in the wrapper's `case "$sys" in` list or the
+# launch exits 4 with "no -core given and no default for system". Pull the names out of the
+# installed script rather than restating them here, so the two can be checked against
+# each other.
+rtab=$(SUDO awk '/case "\$sys" in/{f=1;next} f && /esac/{f=0} f{
+        n=split($0,a,/[)|]/); for(i=1;i<=n;i++){k=a[i]; gsub(/[ \t]/,"",k); if(k ~ /^[a-z0-9_]+$/) print k}
+     }' "$RPLAY" 2>/dev/null | LC_ALL=C sort -u)
 nsys=0
-while IFS="$(printf '\t')" read -r sysname syspath syscores; do
+while IFS="$(printf '\t')" read -r sysname syspath syscores syscmd; do
   [ -n "${sysname}" ] || continue
   nsys=$((nsys+1))
   for c in ${syscores}; do
     SUDO ls "${MNT}/root/usr/lib/libretro/${c}_libretro.so" >/dev/null 2>&1 \
       || { v "  !! system ${sysname} declares core '${c}' but that library is not in the image"; fail=1; }
   done
+  case "${syscmd}" in
+    *r36-play*)
+      case "${syscmd}" in
+        *-core*) ;;
+        *) v "  !! system ${sysname} launches r36-play without naming a core - ES appends it only for netplay (FileData.cpp:552), so the game would exit 4"; fail=1 ;;
+      esac
+      printf '%s\n' "${rtab}" | grep -qx "${sysname}" \
+        || { v "  !! ${sysname} is not in r36-play's fallback table - an unconfigured %CORE% (nobody has picked a core) leaves the launch with no core at all"; fail=1; }
+      ;;
+  esac
   sn=$(SUDO find "${MNT}/root${syspath}" -type f 2>/dev/null | wc -l)
   { [ -d "${MNT}/root${syspath}" ] && [ "${sn}" -ge 1 ]; } \
     || { v "  !! system ${sysname} scans ${syspath}, which is absent or empty - ES would drop it silently"; fail=1; }
 done <<< "${esmap}"
-v "  cfg systems cross-checked: ${nsys} (every <core> installed, every <path> present and non-empty)"
+v "  cfg systems cross-checked: ${nsys} (every <core> installed, every <path> present and non-empty, every r36-play system names -core and is in the wrapper's table)"
 [ "${nsys}" -ge 8 ] || { v "  !! es_systems.cfg declares ${nsys} systems, expected at least 8"; fail=1; }
+
+# An XML comment may not contain "--" except as its own terminator. ES's parser (pugixml)
+# tolerates it, so the defect is invisible on the card - it took a strict parser to notice
+# that a comment here spelled an option as "-r/--root". Replace the delimiters with tokens,
+# then look for a double dash left inside any comment body.
+badc=$(SUDO sed 's/<!--/@OPEN@/g; s/-->/@CLOSE@/g' "$ESCFG" 2>/dev/null | tr -d '\n' | awk '{
+	s=$0
+	while ((p=index(s,"@OPEN@"))>0) {
+		s=substr(s,p+6)
+		q=index(s,"@CLOSE@"); if (q==0) break
+		if (index(substr(s,1,q-1),"--")>0) n++
+		s=substr(s,q+7)
+	}
+} END{print n+0}')
+[ "${badc:-0}" -eq 0 ] \
+  || { v "  !! es_systems.cfg has ${badc} comment(s) containing -- - illegal XML, ES only happens to accept it"; fail=1; }
 
 # The theme is 288 MB of files, so it is exactly the kind of thing that can silently
 # not arrive (see the /roms empty-directory case). A theme directory with no files, or a

@@ -1,14 +1,21 @@
 #!/bin/sh
 # r36-play - the single launch wrapper ES uses for libretro systems.
 #
-# Why a wrapper at all: ES-DE looks at <command> and, unless it already contains
-# %EMULATOR%/-emulator and %CORE%/-core, appends " -emulator <name> -core <name>"
-# itself (es-app/src/FileData.cpp:553-557). That is exactly the information we need
-# per launch, so the cfg stays a plain "<wrapper> %ROM%" and this script takes the
-# two flags. RetroArch would abort on "-emulator", so it must be consumed here.
+# Why a wrapper at all: RetroArch would abort on "-emulator", and the core has to turn into
+# a filename (/usr/lib/libretro/<core>_libretro.so), so the two pieces of information ES
+# knows per launch have to be consumed here.
 #
-# Cores live in /usr/lib/libretro/<core>_libretro.so - installed by the
-# packages/libretro/* recipes, because Ubuntu has no libretro core packages.
+# ES does NOT hand them over unless asked. The append at es-app/src/FileData.cpp:553-557
+# (" -emulator %EMULATOR%", " -core %CORE%") is inside `if (forceCore)` at :552, and
+# forceCore is only set by the netplay branch at :507-528 - measured on the card, a normal
+# launch of /roms/neogeo/kof98.zip arrived as "r36-play /roms/neogeo/kof98.zip" with nothing
+# else. So es_systems.cfg now writes "-core %CORE%" itself; %CORE% comes from
+# FileData::getCore() (:1437) reading the SystemConf key "<system>.core", which is empty
+# until the user picks a core in ES.
+#
+# Which means this script has to survive "-core" arriving with no value after it - the
+# unconfigured default - and still know what to launch: hence the per-system table below,
+# which is also what makes the wrapper testable by hand over ssh.
 set -u
 
 emu=""
@@ -16,8 +23,11 @@ core=""
 rom=""
 while [ $# -gt 0 ]; do
 	case "$1" in
-		-emulator) emu="${2:-}"; shift 2 ;;
-		-core)     core="${2:-}"; shift 2 ;;
+		# A dangling flag must not kill the launch: `shift 2` with one parameter left is an
+		# error in dash ("shift: can't shift that many") and aborts the script, which would
+		# turn ES's empty %CORE% into a failed game rather than a defaulted one.
+		-emulator) [ $# -ge 2 ] || break; emu="$2"; shift 2 ;;
+		-core)     [ $# -ge 2 ] || break; core="$2"; shift 2 ;;
 		*)         rom="$1"; shift ;;
 	esac
 done
