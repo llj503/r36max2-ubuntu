@@ -25,6 +25,19 @@ RetroArch 本身（resolute 是 `retroarch 1.22.2+dfsg`），但**没有任何 l
 | psx | `pcsx_rearmed` | `c8816799` | `Makefile.libretro` | 这棵树带 `./configure`，框架会给它建一个 out-of-tree 构建目录并在里面跑 `make_target()`，所以必须 `cd ${PKG_BUILD}`，否则 `-f Makefile.libretro` 找不到文件 |
 | dreamcast | `flycast` | `4e3e2823` | `make -f Makefile platform=arm64 AS=$CC MFLAGS=-mno-outline-atomics HAVE_OPENMP=0 HAVE_VULKAN=0` | 三处见下 |
 | saturn | `mednafen_saturn` | `65f05fa6` | `make -f Makefile platform=unix LTO=0` | 这个 Makefile 默认打开 `-flto=auto -fipa-pta`，同上必须关掉 |
+| gba | `gpsp_ezode` | `b4918c36` | `make platform=arm64` | 见下，和 flycast 是同一类坑但更阴：`platform=unix` 用**构建机**的 `uname -a` 决定 JIT |
+| arcade / neogeo / fbneo / cps1 / cps2 | `fbneoplus` | `8ebb4eea` | `cd ${PKG_BUILD} && make -C src/burner/libretro platform=aarch64` | 第一个坑是 `-C` 相对路径：`make_target()` 不在 `${PKG_BUILD}` 里跑，所以少了 `cd` 就 `src/burner/libretro: No such file or directory` |
+
+gpsp 的坑读代码才能看见，编出来的东西不会报错：`platform=unix` 分支（Makefile:23-34）拿
+`$(shell uname -a)` —— **构建机**的 —— 去判断 dynarec，在 x86-64 的 WSL 上它命中
+`CPU_ARCH := x86_32`，于是把 `x86/x86_stub.S` 塞进 SOURCES_ASM 让 aarch64 的 gas 去汇编 x86
+指令；而它唯一一条自动走 arm64 JIT 的路（Makefile:61-69）要求 `CROSS_COMPILE` 里出现字面量
+`webos`。所以只能用 `platform=arm64`（Makefile:380-388：`CPU_ARCH := arm64`、
+`HAVE_DYNAREC := 1`、`MMAP_JIT_CACHE = 1`）。核本身编不编 dynarec，产物都是 aarch64、都能
+"编译成功"，唯一的区别是慢 —— 配方因此不去 `nm` 符号（`link.T` 只导出 `retro_*`，装好的
+`.so` 又被框架 strip 掉），而是断言 `arm/arm64_stub.o` 存在且 `arm_stub.o` 不存在：
+Makefile.common:35-44 只在 `CPU_ARCH=arm64` 时追加 `arm64_stub.S`，32 位路径追加
+`arm_stub.S`，解释器两个都不追加，而 Makefile:584 把 `SOURCES_ASM` 变成源码同名的 `.o`。
 
 flycast 的三个坑值得单独记，因为它们都不是"参数写错"而是**默认值在交叉编译下是错的**：
 
@@ -151,6 +164,40 @@ systemctl stop r36-es ; fuser /dev/dri/card0   # 必须是空的
    如果希望不经过 ES 也能手工启动，再往 `r36-play` 的默认表里加一行。
 4. `make image`。打包阶段会把第 3 步逐条对着镜像核（core 有没有 `.so`、path 目录在不在），
    所以前三步里任何一步漏了都会在这里失败，而不是在板子上"没声音/没系统/启动即退"。
+
+## 不走 RetroArch 的两个：OpenBOR 与 ONScripter
+
+上面四步是给 libretro 核的。这两个是**独立引擎**，`<command>` 直接指自己的 wrapper，
+没有 `<emulators>`/`<core>`，因为程序本身不是核：
+
+| | OpenBOR | ONScripter |
+| --- | --- | --- |
+| 配方 | `packages/emulators/openbor-ff` | `packages/emulators/onscripter` |
+| 上游 pin | `AveyondFly/openbor-fflns` `5cac6523`，tarball 189 MB，sha256 `2e2ff887` | `YuriSizuku/OnscripterYuri` `08f744b3`，sha256 `7d0b640b` |
+| 游戏长什么样 | `/roms/openbor/*.pak`（游戏包里 30 个） | `/roms/onscripter/<游戏目录>/*.ons` 标记文件 |
+| 为什么必须包一层 | 引擎**没有 rom 参数**：`sdlport.c:30` 把游戏目录硬编码成 CWD 旁的 `Paks`，`menu.c:522` 找不到就打印 `No Mods In Paks Folder!`。所以 wrapper 清空 `Paks/` 里的符号链接、只链本次这一个（连同 `*.pak.0*` 分卷），再 `cd` 过去执行 | 引擎的 root 参数吃的是**目录**不是脚本（`onscripter_main.cpp:370`），而 ES 给的是标记文件，所以 wrapper 取它的 `dirname` |
+| 配置落点 | `/roms/.config/openbor`（在 ROM 分区上，用户能自己找到存档；同时在每个 `<path>` 之外，`Paks/` 的符号链接和引擎自建的 `Logs/` 不会被当成游戏扫进来） | 存档由引擎写进游戏目录本身 |
+| 手柄 | 打 0001 号补丁后输入走 `SDL_GameController`（补丁把 `SDL_JoystickOpen` 从 `engine/sdl/control.c` 里**换掉**而不是并存，配方据此断言：两条 API 同时活着会每个键触发两次且没有任何报错）。因此不需要参考发行版那套 `gptokeyb` 假键盘；SDL 初始化会读 CWD 的 `gamecontrollerdb.txt`，wrapper 把 PortMaster 那份 r36max2 映射链过去 | 引擎自己处理 SDL 事件，`-enc:gbk` 是写死的默认值（编码错了照样"跑起来"，只是满屏乱码） |
+
+两个引擎的 `make` 参数也各有一个只能读代码才发现的点，都写进配方的注释里了：
+
+- OpenBOR：`-Werror` **不用去 sed**（参考配方 sed 它，但这个 commit 的 Makefile 里唯一一处
+  在 513 行的注释里，516 行的活命令行没有它）；`STRIP` 走 `NO_STRIP=1`（Makefile:259 的
+  Linux 分支是裸 `strip`，即宿主 amd64 的 strip 去剥 aarch64 ELF），编完由配方用交叉
+  binutils 剥；`pkg-config sdl2 --cflags` 在 519 行被 shell 出来，框架
+  `config/functions:218-235` 已经为 target 构建导出了完整的交叉 pkg-config，
+  所以**不要**在配方里再声明一遍（我第一版就是这么写的，反而比框架的窄）。
+- ONScripter：它的 libretro 目标（`src/onsyuri_libretro`）把 SDL2/SDL_image/SDL_mixer/
+  SDL_ttf/bzip2/lua 六个依赖**以 submodule 形式 vendored 进去自己编**，而 GitHub 的 archive
+  不解 submodule（实测六个目录 `files=0`）。选它就要再 pin 六个上游，所以走 standalone
+  分支（CMakeLists.txt:46-70），代价只是 rootfs-apt 里多五个 `-dev` 包。
+
+**当前状态**：`rootfs-apt` 补的那批 `-dev` 包（`libsdl2-gfx-dev libvpx-dev` +
+`libsdl2-ttf-dev libsdl2-image-dev libjpeg-turbo8-dev libbz2-dev lua5.4-dev`）正在重新拉闭包，
+两个引擎配方已经写好但**还没编过**，更没进过卡。`packages/emulators/*/*/sources/` 之所以能
+进 git，是因为 `.gitignore` 里那条 `sources/` 收窄成了 `/sources/` —— 原来那条不带锚点，
+把包自己的 `sources/` 也吞了：wrapper 文件躺在磁盘上 git 看不见，只有推完之后在构建机上
+`install` 那行才会暴露"文件不存在"。
 
 ## 还没做
 
