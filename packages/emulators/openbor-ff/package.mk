@@ -152,17 +152,24 @@ makeinstall_target() {
   # not merely have been present at link time: -lvpx and -lSDL2_gfx resolve through a .so
   # symlink whose target is a versioned soname, and if that symlink and the shipped runtime
   # ever disagree, the build still succeeds and the binary dies on the device with
-  # "error while loading shared libraries". The sysroot is rootfs-apt's mirror of
-  # usr/lib/aarch64-linux-gnu + lib/aarch64-linux-gnu, so checking NEEDED against it is
-  # checking against what the card will have.
+  # "error while loading shared libraries".
+  #
+  # The tree searched is ${BUILD}/image/system - the rootfs itself - and deliberately NOT
+  # ${SYSROOT_PREFIX}. scripts/build:451-452 swaps SYSROOT_PREFIX for the package's own
+  # private copy (four empty directories plus a lib32 symlink) right before makeinstall and
+  # restores the real one only at :567, and the first build of this recipe proved what that
+  # costs: the check reported all ten NEEDED entries missing, libc.so.6 and libm.so.6
+  # included, and killed a build whose link had in fact succeeded.
+  local ROOTFS=${BUILD}/image/system
+  [ -d "${ROOTFS}/usr/lib" ] || die "openbor-ff: no staged rootfs at ${ROOTFS} - is rootfs-apt built?"
   local soname missing=""
   for soname in $(readelf -d ${INSTALL}/usr/bin/OpenBOR-ff 2>/dev/null |
                   sed -n 's/.*Shared library: \[\(.*\)\]/\1/p'); do
-    find ${SYSROOT_PREFIX} -name "${soname}" -print -quit 2>/dev/null |
+    find -L "${ROOTFS}/usr/lib" "${ROOTFS}/lib" -name "${soname}" -print -quit 2>/dev/null |
       grep -q . || missing="${missing} ${soname}"
   done
   if [ -n "${missing}" ]; then
-    die "openbor-ff: links against${missing}, which is not in the mirrored rootfs - the engine would fail to load on the card"
+    die "openbor-ff: links against${missing}, which is not in the staged rootfs - the engine would fail to load on the card"
   fi
-  build_msg "CLR_OK" "STEP" "NEEDED all present in the shipped rootfs: $(readelf -d ${INSTALL}/usr/bin/OpenBOR-ff 2>/dev/null | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | tr '\n' ' ')" "indent"
+  build_msg "CLR_OK" "STEP" "NEEDED all present in the staged rootfs: $(readelf -d ${INSTALL}/usr/bin/OpenBOR-ff 2>/dev/null | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | tr '\n' ' ')" "indent"
 }

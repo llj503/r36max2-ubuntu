@@ -381,15 +381,28 @@ EOS
   #   cp: cannot create directory '.../.sysroot/rootfs-apt.target/lib/aarch64-linux-gnu':
   #       No such file or directory
   # rootfs-base does the same mkdir before mirroring; the re-mirror needs it too.
-  mkdir -p "${SR}/usr" "${SR}/lib"
-  rm -rf "${SR}/usr/include" "${SR}/usr/lib/aarch64-linux-gnu" "${SR}/lib/aarch64-linux-gnu"
+  mkdir -p "${SR}/usr" "${SR}/lib" "${SR}/usr/share"
+  rm -rf "${SR}/usr/include" "${SR}/usr/lib/aarch64-linux-gnu" "${SR}/lib/aarch64-linux-gnu" \
+         "${SR}/usr/share/pkgconfig"
   cp -a "${R}/usr/include" "${SR}/usr/include" ||
     die "rootfs-apt: cannot re-mirror headers into ${SR}/usr/include"
   [ -d "${R}/usr/lib/aarch64-linux-gnu" ] && \
     cp -a "${R}/usr/lib/aarch64-linux-gnu" "${SR}/usr/lib/aarch64-linux-gnu"
   [ -d "${R}/lib/aarch64-linux-gnu" ] && \
     cp -a "${R}/lib/aarch64-linux-gnu" "${SR}/lib/aarch64-linux-gnu"
-  build_msg "CLR_OK" "STEP" "8 sysroot re-mirrored for cross builds" "indent"
+  # /usr/share/pkgconfig too, not just the multiarch one. Ubuntu does not put every .pc
+  # under usr/lib/<triple>: libbz2-dev installs bzip2.pc into /usr/share/pkgconfig
+  # (measured with dpkg-deb -c, and the staged rootfs has exactly one copy at
+  # image/system/usr/share/pkgconfig/bzip2.pc). config/functions:221 already lists
+  # ${SYSROOT_PREFIX}/usr/share/pkgconfig in PKG_CONFIG_LIBDIR, so the only missing piece
+  # was the file. Without it every cross build that resolves freetype2 dies on its
+  # Requires.private - measured on onscripter:
+  #   Package 'bzip2', required by 'freetype2', not found
+  #   CMake Error at FindPkgConfig.cmake:619: required packages were not found: SDL2_ttf
+  # which reads like a SDL2_ttf problem and is a mirroring gap.
+  [ -d "${R}/usr/share/pkgconfig" ] && \
+    cp -a "${R}/usr/share/pkgconfig" "${SR}/usr/share/pkgconfig"
+  build_msg "CLR_OK" "STEP" "8 sysroot re-mirrored for cross builds (incl. $(ls "${SR}/usr/share/pkgconfig" 2>/dev/null | wc -l) /usr/share .pc files)" "indent"
 
   # runtime resolver: public DNS only (policy change vs v20, see header)
   printf 'nameserver 223.5.5.5\n' > "${R}/etc/resolv.conf"

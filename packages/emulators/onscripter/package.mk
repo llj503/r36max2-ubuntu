@@ -71,16 +71,21 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/local/bin
   install -m 755 ${PKG_DIR}/sources/r36-ons ${INSTALL}/usr/local/bin/r36-ons
 
-  # Same loader check as openbor-ff: a NEEDED entry that is not in the mirrored rootfs is a
-  # build that succeeds and a device that cannot start the engine.
+  # Same loader check as openbor-ff, same reason: a NEEDED entry that is not in the rootfs
+  # the image ships is a build that succeeds and a device that cannot start the engine.
+  # It searches ${BUILD}/image/system and not ${SYSROOT_PREFIX}, because scripts/build:451
+  # swaps SYSROOT_PREFIX for an almost-empty per-package private copy immediately before
+  # makeinstall - checking against it would flag every soname, libc.so.6 included.
+  local ROOTFS=${BUILD}/image/system
+  [ -d "${ROOTFS}/usr/lib" ] || die "onscripter: no staged rootfs at ${ROOTFS} - is rootfs-apt built?"
   local soname missing=""
   for soname in $(readelf -d ${INSTALL}/usr/bin/onsyuri 2>/dev/null |
                   sed -n 's/.*Shared library: \[\(.*\)\]/\1/p'); do
-    find ${SYSROOT_PREFIX} -name "${soname}" -print -quit 2>/dev/null |
+    find -L "${ROOTFS}/usr/lib" "${ROOTFS}/lib" -name "${soname}" -print -quit 2>/dev/null |
       grep -q . || missing="${missing} ${soname}"
   done
   if [ -n "${missing}" ]; then
-    die "onscripter: links against${missing}, which is not in the mirrored rootfs"
+    die "onscripter: links against${missing}, which is not in the staged rootfs"
   fi
   build_msg "CLR_OK" "STEP" "NEEDED all present: $(readelf -d ${INSTALL}/usr/bin/onsyuri 2>/dev/null | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | tr '\n' ' ')" "indent"
 }
