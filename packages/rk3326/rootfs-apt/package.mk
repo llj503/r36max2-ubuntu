@@ -43,9 +43,16 @@ PKG_TOOLCHAIN="manual"
 # libsdl2-gfx-dev and libvpx-dev are OpenBOR's, and the reason they are here rather than
 # something a recipe can arrange for itself: the engine links -lSDL2_gfx and -lvpx
 # (engine/Makefile:599 -lSDL2 -lSDL2_gfx, :643 -lvpx), and measured against this sysroot
-# both were absent - no headers (SDL2/SDL_gfxPrimitives.h, vpx/vpx_encoder.h both MISSING)
-# and no linker name (only the runtime libSDL2_gfx-1.0.so.0 / libvpx.so.12). The -dev
-# packages carry the .so symlink each points at, so what OpenBOR links against is
+# neither had a linker name - find for libSDL2_gfx* returned nothing at all, and the only
+# vpx object was libvpx.so.12.0.0 with no libvpx.so. The runtime packages were already in
+# the list (libSDL2_gfx-1.0-0) or pulled in transitively, so the .so was present and -l<name>
+# still failed, which is a link error with no clue in it. Both -dev packages supply the
+# symlink plus the headers - dpkg-deb -c on them: libSDL2_gfx.so -> libSDL2_gfx-1.0.so.0.0.2
+# with ./usr/include/SDL2/SDL2_gfxPrimitives.h, libvpx.so with ./usr/include/vpx/*.
+# (Note the header's real name carries a "2_": SDL2_gfxPrimitives.h. An earlier version of
+# this comment claimed SDL_gfxPrimitives.h was measured missing, but that path has never
+# existed - the probe string was wrong, so it proved nothing about the header.)
+# The -dev packages carry the .so symlink each points at, so what OpenBOR links against is
 # exactly what this rootfs ships; rootfs-apt re-mirrors usr/include and
 # usr/lib/aarch64-linux-gnu into the per-package sysroot, which is how they reach the
 # cross build.
