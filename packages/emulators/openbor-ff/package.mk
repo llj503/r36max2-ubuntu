@@ -77,8 +77,32 @@ post_patch() {
 }
 
 make_target() {
-  cd ${PKG_BUILD}/engine || return 1
+  cd ${PKG_BUILD} || return 1
 
+  # engine/Makefile's link rule is `$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(RES) $(LIBS)` -
+  # it never uses LDFLAGS. The framework's -rpath-link dirs live only in LDFLAGS
+  # (config/functions:459), so this link cannot resolve libSDL2.so's OWN DT_NEEDED entries.
+  # Measured, the first run died exactly there:
+  #   warning: libX11.so.6, needed by .../sysroot/lib/aarch64-linux-gnu/libSDL2.so,
+  #            not found (try using -rpath-link or -rpath)
+  # with libasound/libpulse/libsamplerate/libXext/libXcursor/libXi/libXfixes/... behind it,
+  # then a wall of "undefined reference to `XFree'" and friends. None of those libraries is
+  # missing - they are all in the sysroot; -L does not count for transitive dependencies,
+  # only -rpath-link does (this is the same trap config/functions:453-458 documents for
+  # libEGL/libGLdispatch).
+  #
+  # The flags go into the exported CFLAGS because that is the one variable this Makefile
+  # appends to (`CFLAGS +=`), so an inherited value survives into both the compile and the
+  # link. Putting CFLAGS= on the make command line would have been the wrong tool: a
+  # command-line variable beats every `+=` in the file, and the engine's own -D/-I/-O flags
+  # would disappear with it.
+  local RL
+  RL=$(printf '%s\n' ${LDFLAGS:-} | grep -- '-rpath-link' | tr '\n' ' ')
+  [ -n "${RL}" ] || die "openbor-ff: no -rpath-link in LDFLAGS - the framework's flag list moved, and this link will fail with 'libX11.so.6, needed by libSDL2.so, not found'"
+  export CFLAGS="${CFLAGS} ${RL}"
+  build_msg "CLR_OK" "STEP" "link flags borrowed from LDFLAGS: ${RL}" "indent"
+
+  cd engine || return 1
   make BUILD_LINUX_aarch64=1 \
        SDKPATH="${SYSROOT_PREFIX}" \
        NO_STRIP=1 \
