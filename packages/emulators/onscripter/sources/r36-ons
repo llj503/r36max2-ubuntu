@@ -32,9 +32,22 @@ export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-kmsdrm}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
 export HOME="${HOME:-/root}"
 
+# The flags below were wrong in the first version of this file and the binary said so:
+#   unknown option -fullscreen / unknown option -enc:gbk   -> exit 255
+# Read the built binary's own --help instead of the source again: the option loop compares
+# argv+1, so a long option needs BOTH dashes (`--fullscreen`, `--enc:gbk`), while `-r` is
+# the accepted short form of `--root`. Only `-r`, `-f` and `-v`/`-h` work with one dash.
+#
+# cd into the game directory as well: onsyuri opens its font by a bare relative name and
+# measured, running from elsewhere gives
+#   can't open font file: default.ttf
+# even with --root pointing at the folder - the archives are found, the font is not.
+# A Windows user double-clicks inside the game folder; matching that is also what the
+# reference distro's launcher does.
+cd "$game" || { echo "r36-ons: cannot enter $game" >&2; exit 3; }
+
 # -enc:gbk is a default, not a guess about the user's library: the VN releases in this
 # region ship GBK-encoded scripts, and with the wrong encoding every line of dialogue is
-# mojibake while the engine still "runs". Shift-JIS games need -enc:sjis instead
-# (onscripter_main.cpp:383-390 accepts sjis, gbk, utf8); there is no per-game override
-# because there is no game on the card yet to define what it should look like.
-exec /usr/bin/onsyuri -r "$game" -fullscreen -enc:gbk
+# mojibake while the engine still "runs". onsyuri --help accepts sjis|gbk|utf8; there is no
+# per-game override yet because two games is not enough evidence to design one.
+exec /usr/bin/onsyuri --root "$game" --fullscreen --enc:gbk
