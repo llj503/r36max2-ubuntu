@@ -40,6 +40,12 @@ OK: connected to my-wifi, IPv4=192.168.31.57  (ssh root@192.168.31.57)
    修法：四个消费者（`r36-bootlog` / `r36-status-screen` / `r36-fwswap` / `r36-wifi-setup`）
    统一用 `/mnt/boot` 这一个挂载点，已经挂上就复用、只卸载自己挂的那次。
 2. **频段**：这块板子只有 2.4GHz（见 [HARDWARE.md](HARDWARE.md)），5G 专用的 SSID 一定连不上。
+   驱动自己的证据：`rwnx_get_countrycode_channels support channel:1 2 … 14`（5G 的编号是 36/40/…），
+   四个 boot 里所有 `freq=` 只出现过 2412 和 2462。**"2.4G/5G 合一"的 SSID 不挡连接**——卡连的就是
+   它那份 2.4G BSS（aqk 实测 2462 = 信道 11，1 秒连上）。但有两个次生坑：
+   `iw reg get` 里那些 `5170-5730` 是**法规库**允许的频段、不是芯片能力（我读错过一次）；
+   而开机时 reg 域是 `country 00`，00 把 `2457-2482` 标成 `PASSIVE-SCAN`，所以
+   **2.4G 落在信道 12/13/14 的 AP 会"看得见却连不上"**——路由器上把 2.4G 固定到信道 1–11 最省事。
 3. **加密**：看走的是哪条通道 —— 见下面两节。`wifi.txt` 走 `wpa_passphrase`，产出的是
    WPA2-PSK 的 PBKDF2 哈希，**纯 WPA3-个人 连不上**（要设 WPA2 或混合模式）；ES 菜单那条
    通道写的是 `key_mgmt=WPA-PSK SAE`，混合与纯 WPA3 都能连。
@@ -112,10 +118,11 @@ syncthing、rclone、wireguard，这台机器上一个都没有），而**整棵
 | `wifictl enable` | rc=0，supplicant 保持 active |
 | `connect <在用的 SSID> <口令> CN` | **rc=0，用时 1 秒**，`wpa_state=COMPLETED`、`key_mgmt=SAE` —— 这张 AIC8800DC 实际跑起了 WPA3-个人（热点是 WPA2-PSK+SAE 混合） |
 | `connect <不存在的 SSID> …` | **rc=1**，报 `still on "…"(COMPLETED) after 40s, not on "…"`；在用网络没掉，IP 不变 |
-| `connect <范围内的另一个网络>` | 用户实测（10-12）：**口令对也连不上**，而且日志证明它**根本没尝试关联那个网络**——`4-way` 在四个 boot 里全 0，口令从未被测到。所以这一行以前写的"口令错"是错的归因，见"第三次"那一节 |
+| `connect <范围内的另一个网络>` | **10-12 09:24 起 rc=0、1 秒连上**（`aqk`，2462 MHz，`Key negotiation completed … [PTK=CCMP]`，地址换成 `192.168.0.106`，块存进 conf）。在此之前它一直失败，原因见"第四次"——两个不存在的 `wpa_cli` 动词，回话被我丢进 `/dev/null` |
 | `forget_saved <那条>` | rc=0，conf 从 2 个块变 1 个，只删该删的，链路保持 UP。（第一版在这里重启了服务，实测会让卡"看起来掉线"几秒 —— 改成 `remove_network` + 只重写文件，不重启） |
 | `connect_saved <在用 SSID>` | rc=0、1 秒，`key_mgmt=WPA2-PSK`：选中的是 `wifi.txt` 那条**哈希形式**的块，它做不了 SAE，正好把两条通道的存储差别量出来了 |
 | `connect_saved <没存过的>` | rc=1，`"…" is not saved`，不挂起 |
+| `connect_saved <从 aqk 切回在用网络>` | 10-12 09:25:03 rc=0：`select_network=[OK]` → 1 秒内 `Key negotiation completed with c8:5b…` → DHCP 又拿回 `192.168.0.141`。两个方向都会切，且切换过程不再把芯片弄死（这一次 boot 里 `is scanning, abort` 与 `SCAN-FAILED` 都是 0） |
 | 服务里裸 `wifictl` 找不找得到 | `systemd-run` 实测 `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin` → `/usr/bin/wifictl` ✅（ES 的 enumeration 就是这么调的） |
 
 整套测试跑完，`/etc/wpa_supplicant/wpa_supplicant-wlan0.conf` 与测试前 `cmp` **逐字节相同**。
@@ -224,8 +231,10 @@ boot 0 全程一次都没重启过服务，wedge 反而翻倍，而且**再也�
 | 0 | 10-12 07:53–08:10 | 0 | **0** | **0** | 0 | **2** | 1 |
 
 `4-way` 那次是 `grep -ci` 数出来的（前一版我写成大写 `4-WAY`，那样连 "4-Way Handshake failed"
-都匹配不到，0 是假的）。**四个 boot 全零 = 这台机器一次都没走到需要检验口令的那一步。**
-所以"口令错"这个原因要从记录里删掉——它从来没被测试过，不是"测过并且通过"。
+都匹配不到，0 是假的）。~~四个 boot 全零 = 这台机器一次都没走到需要检验口令的那一步~~
+—— **这句推理当天就被证伪了，见下面"第四次"**：口令检验完成的日志行打的不是 `4-way`，
+是 `WPA: Key negotiation completed`。真正立得住的证据只有"`Trying to associate` 里没有那个
+SSID"。
 
 10-12 这个 boot 里 aqk 的真实经过，逐秒：
 
@@ -347,6 +356,58 @@ scan_ssid` → `enable_network` → `select_network`，每条命令的回话都�
 journal 3 行 —— 子进程 stderr 也会被 `r36-es` 转出去一份，所以不止一处）。文件是 root 0600 目录下的，
 和 FAT 上明文的 `wifi.txt`、菜单写进 conf 的 `psk="…"` 是同一档暴露，没有更大口子 —— 但排查时
 别把这份日志贴到公开场合。（我只做了计数，没有动用户的日志文件。）
+
+## 第四次：真正的原因是一个不存在的命令，而"4-way 全 0"是我用错的仪器（2026-10-12）
+
+审计行加上之后的第二次上机就赢了，但也顺手废掉了我自己的一条推理。
+
+**真正的原因**：这台机器的 `wpa_cli` 里**没有 `reload_config`，也没有 `set`**。
+逐个动词对着二进制查过（`strings` 精确匹配）：
+
+| 我发的 | 卡上的 `wpa_cli` 里有吗 | 正确的名字 |
+| --- | --- | --- |
+| `reload_config` | **没有**（daemon 回 `Unknown command`） | `reconfigure` |
+| `set network <id> …` | **没有 `set`**，前缀匹配到 `set_network`，于是字面词 `network` 被当成网络 id（`atoi("network")=0`）—— daemon 收到的是"改当前正在用的那个网络"，回 `FAIL` 是它是对的 | `set_network <id> …` |
+
+而这两条调用的**回话都被我丢进 `/dev/null`**，所以"命令不认识"和"照办了"在日志里长得一模一样——
+这就是六版镜像全绿却连不上第二个网络的全部原因。同一个口令，改对动词之后**1 秒连上**：
+
+```
+09:24:52  wifictl: connect ssid="aqk" … ssid_reply=[OK] keymgmt_reply=[OK] psk_reply=[OK]
+          proto_reply=[OK] mfp_reply=[OK] scanssid_reply=[OK] bss=yes scan_rows=5
+09:24:52  Trying to associate with f4:84:8d:b6:3c:a3 (SSID='aqk' freq=2462 MHz)
+09:24:53  CTRL-EVENT-CONNECTED - Connection to f4:84:8d:b6:3c:a3 completed [id=1]
+09:24:53  WPA: Key negotiation completed with f4:84:8d:b6:3c:a3 [PTK=CCMP GTK=CCMP]
+09:24:55  wlan0: DHCPv4 address 192.168.0.106/24, gateway 192.168.0.1 acquired
+```
+
+按 BSSID 分开数，"这台机器到底有没有跟 aqk 谈到密钥协商"这件事第一次有了可信答案：
+
+| boot | 时段 | 对 aqk 发起关联 | 与 aqk 完成密钥协商 |
+| --- | --- | --- | --- |
+| -7…-4（10-09/10-10 四次） | | 0 | **0** |
+| -5 | 10-10 07:57–14:15 | 3 | **0** ← 那三次全死在关联阶段 |
+| -3…-1（10-12 早上三次） | | 0 | 0 |
+| 0 | 10-12 09:24 | 1 | **1** ← 第一次，成功 |
+
+**我作废的仪器**：昨天我写"四个 boot 里 `4-way` 全 0 ⇒ 从没走到检验口令那一步"。这次**成功**连接之后
+`4-way` 计数仍然是 0——wpa_supplicant 默认根本不打那个词，它打的是 `WPA: Key negotiation completed`。
+结论侥幸没错（错的是动词），但那条证据不成立。**能用的信号是 `Trying to associate` 里有没有那个
+SSID**，那个默认真的打；数密钥协商要数 `Key negotiation completed with <bssid>`。
+
+**双频（2.4G+5G 合一）这件事的答案也在同一份现场里**：这颗芯片**只有 2.4G**——驱动自己打印
+`rwnx_get_countrycode_channels support channel:1 … 14`（5G 的编号是 36/40/…），四个 boot 里出现过的
+`freq=` 只有 2412 和 2462。所以混合 SSID 不挡连接，卡连的就是 aqk 的 2.4G 那份 BSS（2462=信道 11）。
+两个次生风险值得记：`iw reg get` 里那些 `5170-5730` 是**法规库**允许的频段，不是芯片能力，把它当
+"支持 5G"是我读错过一次的地方；而 boot 报告里 reg 域是 `country 00`（不是 conf 写的 CN），00 把
+`2457-2482` 标成 `PASSIVE-SCAN`——**aqk 的 2.4G 若落在信道 12/13 就会"看得见、连不上"**。这次不是
+这个原因（它就在信道 11）。路由器侧能做的：2.4G 固定信道 1–11、WPA2/WPA3 混合而非 WPA3-only、
+关掉双频合一/5G 优先。
+
+**现在的连接路径不再重读文件**：`add_network` → `set_network`（六项，每项回话都进审计）→
+`enable_network` → `select_network`；**连上之后**才把块写进 conf 用来活过重启，写不进去就在审计里
+明说"连上了但存不下来"。失败时 `remove_network` 撤掉刚加的那个、回滚不动在用的链路（这条今天
+在机器上量过：`rollback left the live association alone`，好网络一次都没掉）。
 
 
 
