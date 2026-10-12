@@ -41,6 +41,39 @@ COUNTRY_DEFAULT=CN
 
 err() { echo "wifictl: $*" >&2; }
 
+# One line per decision, appended to a file AND to stderr.  stderr is what already reaches
+# journalctl through r36-es; the file exists so the sequence can be read off the card in a
+# USB reader without a keyboard, serial cable or screen.  It is deliberately NOT under /run:
+# the whole point is reading what happened after a reboot moved the card back to the PC, and
+# /run is tmpfs.  Nothing that goes through here may contain a passphrase - callers pass the
+# SSID and the daemon's answers, and that is on purpose.
+AUDIT_DIR=/var/lib/r36-wifictl
+AUDIT=$AUDIT_DIR/audit.log
+audit() {
+    mkdir -p "$AUDIT_DIR" 2>/dev/null
+    printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >>"$AUDIT" 2>/dev/null
+    err "$*"
+}
+
+# Which runtime network the daemon is working on right now, or nothing when it is not
+# connected.  The rollback needs the id, not the ssid: after select_network the others are
+# disabled, so "go back" has to name the one to re-enable.
+current_network_id() { $CTL status 2>/dev/null | awk -F= '/^network_id=/{print $2}'; }
+
+# Is $1 present in the daemon's scan table?  "no" here means the daemon has no BSS to
+# associate with, which is a completely different answer from "we tried and the AP refused"
+# - and neither of them is a passphrase problem, because the key is only examined after the
+# association succeeds.  This is the distinction the 2026-10-12 logs could not make.
+bss_seen() {
+    $CTL scan_results 2>/dev/null | awk -F'\t' -v want="$1" '
+        NR > 1 && NF >= 5 {
+            s = $5
+            for (i = 6; i <= NF; i++) s = s " " $i      # SSIDs contain spaces
+            if (s == want) { found = 1; exit }
+        }
+        END { print (found ? "yes" : "no") }'
+}
+
 # --- supplicant lifecycle --------------------------------------------------------
 
 supplicant_up() { [ -S "/run/wpa_supplicant/$IFACE" ]; }
@@ -293,15 +326,15 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
         *) country=$COUNTRY_DEFAULT ;;
     esac
 
-    # Snapshot first, and roll back to it if the requested network does not come up. This
-    # is not theoretical: with an in-range SSID and a wrong passphrase, wpa_supplicant
-    # keeps working on that one network and never returns to the one that was working, so
-    # a failed attempt from the menu took this card off the LAN completely - and since
-    # WiFi is the board's only remote channel, the user was left holding a dead-end
-    # screen with no way to inspect it. "Failed to connect" has to mean "and you are back
-    # where you were".
+    # Snapshot the file AND the daemon's notion of "what are we connected to", because the
+    # rollback needs both.  This is not theoretical: with an in-range SSID and a wrong
+    # passphrase, wpa_supplicant keeps working on that one network and never returns to the
+    # one that was working, so a failed attempt from the menu took this card off the LAN
+    # completely - and since WiFi is the board's only remote channel, the user was left
+    # holding a dead-end screen with no way to inspect it.
     SNAP=/run/wifictl-connect-snapshot.conf
     cp -a "$CONF" "$SNAP" 2>/dev/null || SNAP=""
+    was_id=$(current_network_id)
 
     start_supplicant || { [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
     put_network "$ssid" "$(build_block "$ssid" "$psk")" "$country" || {
@@ -316,16 +349,33 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
     # wedged the chip (34 refused associations in 86 minutes, see driver_reset). Removing the
     # restart only removed one way of provoking it. reload_config is still the lesser evil
     # here: it rebuilds the runtime networks from the file, so ids and blocks stay in step.
-    $CTL reload_config >/dev/null 2>&1
+    reload=$($CTL reload_config 2>&1)
 
     # Then ask for THAT network by id: without select_network the daemon chooses among the
     # blocks itself, so "connect to X" could end up associated somewhere else and the ssid
     # check below would report failure for a connection that had actually worked.
     id=$(network_id_for "$ssid")
-    if [ -n "$id" ]; then
-        $CTL enable_network "$id" >/dev/null 2>&1
-        $CTL select_network "$id" >/dev/null 2>&1
-    fi
+
+    # Everything the next post-mortem needs, in one line, on stderr - because stderr from
+    # this script reaches the journal (measured: the "wifictl: still on …" lines are in
+    # journalctl) and this board has no keyboard, no serial and no screen that can show any
+    # of it.  The 2026-10-12 morning attempt failed with FOUR possible causes that the log
+    # could not separate: reload refused, the block never became a runtime network, the BSS
+    # not in the scan table, or the driver refusing to scan (-EBUSY, "is scanning, abort").
+    # It also could not say whether the passphrase was ever tested, which is the one question
+    # the user is actually asking.
+    audit "connect ssid=\"$ssid\" reload=[$reload] runtime_id=${id:-none} was_id=${was_id:-none} bss=$(bss_seen "$ssid") scan_rows=$(scan_rows | wc -l) state=$(wpa_state) country=$country"
+
+    # A missing runtime network is a hard failure, not something to wait 40 seconds for.
+    # The version before this one had `if [ -n "$id" ]` with no else here: when the daemon
+    # did not take the block, the script silently skipped select_network, then reported a
+    # timeout - which is exactly the "nothing tried, password never tested" shape seen in
+    # the 2026-10-12 journal, and it looked like a wrong-key failure from the outside.
+    [ -n "$id" ] || { err "connect: the daemon did not load a network for \"$ssid\" (reload said [$reload])";
+        [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
+
+    $CTL enable_network "$id" >/dev/null 2>&1
+    $CTL select_network "$id" >/dev/null 2>&1
 
     connected_ok "$ssid" || { [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1; }
 }
@@ -346,21 +396,75 @@ iw_reg_country() {
 # evidence on 2026-10-10 and has to be run on the device before it can be called a fix.
 # It is bounded to one attempt per call and it only ever runs where the link is already
 # down, so the worst case is the twenty seconds it takes.
-driver_reset() {
-    systemctl stop "$SVC" 2>/dev/null
-    ip link set "$IFACE" down 2>/dev/null
-    rmmod aic8800_fdrv 2>/dev/null
-    rmmod aic_load_fw 2>/dev/null
-    modprobe aic_load_fw 2>/dev/null
-    modprobe aic8800_fdrv 2>/dev/null
+# The USB device the chip hangs off, found by walking up from the netdev until the
+# `authorized` attribute appears.  Hard-coded bus ids would be wrong the moment the topology
+# changes; /sys/class/net/wlan0 is the only stable name on this board.
+usb_dev_path() {
+    p=$(readlink -f "/sys/class/net/$IFACE/device" 2>/dev/null)
+    [ -n "$p" ] || return 1
+    while [ -n "$p" ] && [ "$p" != "/" ]; do
+        [ -e "$p/authorized" ] && { printf '%s' "$p"; return 0; }
+        p=$(dirname "$p")
+    done
+    return 1
+}
+
+# The one recovery that is not "open the case": de-authorize and re-authorize the port,
+# which forces the chip off and back onto the bus.  It is in this function because the
+# module reload is NOT it - measured on the device 2026-10-12 07:57:11, the rmmod did run
+# (`aicwf_usb_exit` + `usb_deregister` are in the kernel log), and it changed nothing: the
+# boot produced exactly ONE "new high-speed USB device" line, at power-on, so modprobe
+# re-bound a fresh driver to a chip that was still stuck mid-scan refusing every scan with
+# -EBUSY.  Re-authorizing makes the driver probe the device again from scratch, which is
+# what the firmware-upload lines at 07:53:24 are the signature of.
+#
+# Still unproven as a cure - it has never been run, because until tonight nothing in the
+# stack ever attempted any recovery at all.  Bounded to one pass, and it only ever fires
+# where the link is already down.
+usb_replug() {
+    p=$(usb_dev_path)
+    [ -n "$p" ] || { audit "no USB device above $IFACE - cannot replug it"; return 1; }
+
+    # A netdev that survives the toggle would mean the device was never detached, i.e. the
+    # whole operation was a no-op - so the check before and after is the actual result.
+    gone=0
+    echo 0 >"$p/authorized" 2>/dev/null || { audit "writing authorized=0 was refused"; return 1; }
+    sleep 2
+    ip link show "$IFACE" >/dev/null 2>&1 || gone=1
+    echo 1 >"$p/authorized" 2>/dev/null || { audit "writing authorized=1 was refused"; return 1; }
 
     i=0
-    while [ $i -lt 20 ]; do
+    while [ $i -lt 25 ]; do
         ip link show "$IFACE" >/dev/null 2>&1 && break
         sleep 1
         i=$((i + 1))
     done
-    ip link show "$IFACE" >/dev/null 2>&1 || { err "wlan0 never came back after the reset"; return 1; }
+    audit "usb replug on $(basename "$p"): netdev disappeared=$gone reappeared=$(ip link show "$IFACE" >/dev/null 2>&1 && echo yes || echo no) after ${i}s"
+    ip link show "$IFACE" >/dev/null 2>&1
+}
+
+driver_reset() {
+    systemctl stop "$SVC" 2>/dev/null
+    ip link set "$IFACE" down 2>/dev/null
+
+    if usb_replug; then
+        audit "chip reset: replugged over USB"
+    else
+        audit "chip reset: USB replug did not bring $IFACE back, reloading the modules instead"
+        rmmod aic8800_fdrv 2>/dev/null
+        rmmod aic_load_fw 2>/dev/null
+        modprobe aic_load_fw 2>/dev/null
+        modprobe aic8800_fdrv 2>/dev/null
+        i=0
+        while [ $i -lt 20 ]; do
+            ip link show "$IFACE" >/dev/null 2>&1 && break
+            sleep 1
+            i=$((i + 1))
+        done
+    fi
+
+    ip link show "$IFACE" >/dev/null 2>&1 || { audit "reset: $IFACE never came back"; err "wlan0 never came back after the reset"; return 1; }
+    ip link set "$IFACE" up 2>/dev/null
 
     start_supplicant || return 1
     i=0
@@ -370,10 +474,12 @@ driver_reset() {
         i=$((i + 1))
     done
     if [ "$(wpa_state)" = COMPLETED ]; then
+        audit "reset: link restored, on \"$(wpa_ssid)\""
         echo "wifictl: driver reset worked, back on \"$(wpa_ssid)\"" >&2
         ensure_lease || true
         return 0
     fi
+    audit "reset: still $(wpa_state) after 40s"
     err "driver reset did not restore the link ($(wpa_state)); this chip needs a power cycle"
     return 1
 }
@@ -397,26 +503,39 @@ driver_reset() {
 #     ZERO restarts of the supplicant. Waiting longer does not help; nothing in the
 #     software stack had been asked to reset the chip.
 restore_snapshot() {  # $1 = the ssid whose block was just added and has to go
-    err "rolling back to the configuration from before the attempt"
+    audit "rolling back to the configuration from before the attempt"
 
     id=$(network_id_for "$1")
     [ -n "$id" ] && $CTL remove_network "$id" >/dev/null 2>&1
-
-    # `select_network` disabled every other network as part of the attempt, and removing the
-    # chosen one does not undo that - so without this loop the rollback would "succeed" and
-    # the supplicant would still refuse to reconnect to anything.  Enabling by id from the
-    # daemon's own list rather than `enable_network all`: the `all` form is newer than the
-    # wpa_cli on this card, and a silently unsupported argument looks identical to a network
-    # that simply will not come back.
-    $CTL list_network 2>/dev/null | awk 'NR > 1 && $1 != "" {print $1}' | while read -r nid; do
-        $CTL enable_network "$nid" >/dev/null 2>&1
-    done
-
     cp -a "$SNAP" "$CONF" 2>/dev/null
     chmod 600 "$CONF" 2>/dev/null
 
-    # One deliberate reconnect, now that the block list is back to what it was.
-    $CTL reassociate >/dev/null 2>&1
+    # Do not touch a link that is already up.  This is a correction, taken from the box's own
+    # journal: the version before this one ended with an unconditional enable-everything loop
+    # plus reassociate, and at 07:55:36 that printed `back on "360JDCWiFi-E378" (COMPLETED)`
+    # and then one second later destroyed that same association - "Trying to associate with
+    # c8:5b…", "Authentication with c8:5b… timed out", "CTRL-EVENT-DISCONNECTED reason=3
+    # locally_generated=1", then "CTRL-EVENT-SCAN-FAILED ret=-16" until the power was cut.
+    # A rollback that re-breaks the connection is worse than no rollback.
+    if [ "$(wpa_state)" = COMPLETED ]; then
+        audit "rollback left the live association alone: on \"$(wpa_ssid)\""
+        echo "wifictl: back on \"$(wpa_ssid)\" ($(wpa_state))" >&2
+        return 0
+    fi
+
+    # Still down, so name the network to go back to: the id the daemon itself reported
+    # before the attempt.  Not `reassociate` (that lets the daemon choose among blocks that
+    # select_network has disabled) and not enable-everything (which is what cost us the link
+    # above).  Removing the attempted block does not re-enable the others either - that is
+    # why this has to be explicit.
+    if [ -n "${was_id:-}" ]; then
+        $CTL enable_network "$was_id" >/dev/null 2>&1
+        $CTL select_network "$was_id" >/dev/null 2>&1
+        audit "rollback: asked for the previous network id=$was_id"
+    else
+        $CTL reassociate >/dev/null 2>&1
+        audit "rollback: no previous network id was known, fell back to reassociate"
+    fi
 
     i=0
     while [ $i -lt 25 ]; do
@@ -425,11 +544,12 @@ restore_snapshot() {  # $1 = the ssid whose block was just added and has to go
         i=$((i + 1))
     done
     if [ "$(wpa_state)" = COMPLETED ]; then
+        audit "rollback recovered the link: on \"$(wpa_ssid)\""
         echo "wifictl: back on \"$(wpa_ssid)\" ($(wpa_state))" >&2
         return 0
     fi
 
-    err "still $(wpa_state) after 25s - the WiFi driver is refusing associations, resetting it"
+    audit "rollback did not restore the link ($(wpa_state)); resetting the chip"
     driver_reset
 }
 

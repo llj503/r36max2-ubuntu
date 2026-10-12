@@ -112,7 +112,7 @@ syncthing、rclone、wireguard，这台机器上一个都没有），而**整棵
 | `wifictl enable` | rc=0，supplicant 保持 active |
 | `connect <在用的 SSID> <口令> CN` | **rc=0，用时 1 秒**，`wpa_state=COMPLETED`、`key_mgmt=SAE` —— 这张 AIC8800DC 实际跑起了 WPA3-个人（热点是 WPA2-PSK+SAE 混合） |
 | `connect <不存在的 SSID> …` | **rc=1**，报 `still on "…"(COMPLETED) after 40s, not on "…"`；在用网络没掉，IP 不变 |
-| `connect <在范围内、但口令错的 SSID>` | **两次都把机器弄下线了**，第二次是修好之后复现的 —— 见"第二次的尸体自己开口了"。所以这一行不是"失败就失败"那么轻：在范围内的错网络会被 wpa 一直重试，而回滚时那次"重新关联回好网络"正是驱动判死的时刻 |
+| `connect <范围内的另一个网络>` | 用户实测（10-12）：**口令对也连不上**，而且日志证明它**根本没尝试关联那个网络**——`4-way` 在四个 boot 里全 0，口令从未被测到。所以这一行以前写的"口令错"是错的归因，见"第三次"那一节 |
 | `forget_saved <那条>` | rc=0，conf 从 2 个块变 1 个，只删该删的，链路保持 UP。（第一版在这里重启了服务，实测会让卡"看起来掉线"几秒 —— 改成 `remove_network` + 只重写文件，不重启） |
 | `connect_saved <在用 SSID>` | rc=0、1 秒，`key_mgmt=WPA2-PSK`：选中的是 `wifi.txt` 那条**哈希形式**的块，它做不了 SAE，正好把两条通道的存储差别量出来了 |
 | `connect_saved <没存过的>` | rc=1，`"…" is not saved`，不挂起 |
@@ -124,14 +124,14 @@ syncthing、rclone、wireguard，这台机器上一个都没有），而**整棵
 现场部署的 `92272ebc` ES 二进制）。代码侧的兜底是 `post_patch()` 里的 grep：
 0103/0104/0105 任一条没打上就 `die`，构建过不去。
 
-**上面那条 IP地址 行还没在屏幕上看过。** 二进制已经离线放进卡里了（`92272ebc` → `ca9daf6b`，
-与 `install_pkg` 逐字节相同，原件备份在卡上 `/root/emulationstation.pre-ip`），但卡这几天一直在
-电脑和"连不上"之间来回，没人把它放回机器里开机。它现在的证据只到这三条：`0101..0105` 在一个
-干净解包上按文件名顺序逐个 `patch -p1` 且**每条都查了退出码**（`scripts/unpack` 自己不查，见下面
-那节）；改过的 `GuiWifi.cpp` 用这个 target 自己的 `CXX_DEFINES/CXX_INCLUDES/CXX_FLAGS` 跑
-`-fsyntax-only` 过，**未打补丁的对照文件也过** —— 否则"编译通过"这件事跟补丁没关系；产物里
-`ca9daf6b` 与 `install_pkg` 逐字节相同，`zh_CN` catalog 里 `IP地址`、`未连接` 两个串都在。
-**屏幕上那一行长什么样、连上之后填的是不是真地址，还没量。**
+**那条 IP地址 行已经在屏幕上确认了**（2026-10-12 早上，用户实测：连上在用网络之后屏上显示的是
+真实地址）。卡上的二进制是 10-10 离线放进去的 `ca9daf6b`，与 `install_pkg` 逐字节相同，原件备份在
+`/root/emulationstation.pre-ip`。代码侧的证据链仍然是那三条：`0101..0105` 在干净解包上按文件名
+顺序逐个 `patch -p1` 且**每条都查退出码**（`scripts/unpack` 自己不查）；改过的 `GuiWifi.cpp` 用这个
+target 自己的 `CXX_DEFINES/CXX_INCLUDES/CXX_FLAGS` 跑 `-fsyntax-only` 过，**未打补丁的对照也过**
+—— 否则"编译通过"跟补丁无关；产物里 `ca9daf6b` 与 `install_pkg` 逐字节相同。
+**没量到的**是"连上之后那个地址会不会自己刷新"——它依赖 `load()` 被再次调用（REFRESH 或连接成功
+那个框），这个我还没在屏上验证过第二个网络。
 
 顺便量清一件会影响你日后排查的事：**别指望在 ES 日志里看到"菜单被打开了"。** 这个构建的
 `es_log.txt` 只写 WARNING 和 ERROR（当场统计：115 WARNING、13 ERROR、**0 条 INFO**），而
@@ -208,14 +208,78 @@ boot 0 全程一次都没重启过服务，wedge 反而翻倍，而且**再也�
 * 新增 `wifictl recover` 走同一段代码，给人手用 —— ES 不会调它（它只调那十个），但调试时不该
   为了触发复位先故意失败一次。
 
-**这条复位能不能救活芯片，还没测。** 它是从 journal 的因果推出来的，写在这里只算"下一步该试什么"，
-不算修好；能算结论的只有前面那张两 boot 对照表。要测的话：卡放回机器 → 开机 → 对一个在范围内
-但口令错的网络走一次连接 → 看 `journalctl -b | grep -E 'driver reset|rwnx_close|Association request'`
-和 `wpa_state`，看它是否自己回到 `COMPLETED`（旧版本在这里就是一路失败到断电）。
+**上面这三条改动，第一条当天晚上就又被推翻了一半，见"第三次"那一节。** 留在这里是因为它记的是
+"为什么不再重启服务"这个理由，那个理由仍然成立；不成立的是"回滚安全了"。
 
-现场处理仍然是离线做的：口令错的那条 `aqk` 块从 conf 里删掉（2 块→1 块，剩下的是原来那条哈希块），
-再把修好的 `wifictl` 装上去；原 conf 备份在构建机 `/root/card-conf.before-aqk-removal`，
-这一版的上一份脚本备份在卡上 `/root/wifictl.pre-reset`。
+## 第三次：干净样本把"口令错"彻底删掉，顺手抓到我自己写的回滚（2026-10-12 早上）
+
+用户把卡放回机器、开机、连上了在用网络（**屏幕上看到了真实 IP —— `0105` 那一行第一次在屏幕上
+成立**），然后去连 `aqk`，并且明确说**口令是对的**。这是第一个"芯片从头就是好的"的样本，
+结果它把两件事一次说清：
+
+| boot | 时段 | 重启 supplicant | 驱动拒关联 | **握手(4-way)** | WRONG_KEY | 认证超时 | 连上次数 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| -2 | 10-10 07:57–14:15 | 0 条记录 | 16 | **0** | 0 | 0 | 11 |
+| -1 | 10-10 14:37–16:08 | **0** | 34 | **0** | 0 | 0 | 1 |
+| 0 | 10-12 07:53–08:10 | 0 | **0** | **0** | 0 | **2** | 1 |
+
+`4-way` 那次是 `grep -ci` 数出来的（前一版我写成大写 `4-WAY`，那样连 "4-Way Handshake failed"
+都匹配不到，0 是假的）。**四个 boot 全零 = 这台机器一次都没走到需要检验口令的那一步。**
+所以"口令错"这个原因要从记录里删掉——它从来没被测试过，不是"测过并且通过"。
+
+10-12 这个 boot 里 aqk 的真实经过，逐秒：
+
+```
+07:53:28  CTRL-EVENT-CONNECTED c8:5b… (360JDCWiFi-E378)        <- 好网络，屏上那个 IP 就是它
+07:55:36  wifictl: still on "360JDCWiFi-E378" (COMPLETED) after 40s, not on "aqk"
+07:55:36  wifictl: back on "360JDCWiFi-E378" (COMPLETED)        <- 我的回滚说：链路没事
+07:55:37  Trying to associate with c8:5b…                       <- 回滚自己发起的重新关联
+07:55:47  Authentication with c8:5b… timed out.
+07:55:51  CTRL-EVENT-DISCONNECTED bssid=c8:5b… reason=3 locally_generated=1
+07:55:52  CTRL-EVENT-SCAN-FAILED ret=-16   +  kernel: rwnx_cfg80211_scan is scanning, abort
+          （一直刷到断电）
+```
+
+两件事同时定了：
+
+1. **aqk 一条 `Trying to associate` 都没有。** 整个 boot 里那次关联只发生过好网络那个 BSSID，
+   `aqk` 的 `f4:84:8d:b6:3c:a3`（10-10 那天出现过，2462 MHz）一次都没出现。常驻进程根本没去碰它
+   —— 于是"连接失败"和口令没有因果关系。为什么没去碰，脚本当时没记录，这就是下面第 2 条改动要补的。
+2. **是我的回滚把好好的链路拆了。** 它先说 "back on … (COMPLETED)"，一秒后自己发起重新关联，
+   认证超时，链路掉光，然后驱动进入"`is scanning, abort`"——从此拒掉每一次扫描（`-EBUSY`），
+   而这台机器唯一还能连网的路就是扫描。我 10-10 晚上加的"把每个网络都 enable 一遍再 reassociate"
+   正是这一次多余关联的来源。
+
+还测到一条我原本不抱希望的：**驱动复位这次真的执行了，而且不够。**
+
+```
+07:57:10  systemd-networkd: wlan0: Link DOWN                    <- 我的 ip link set down
+07:57:11  kernel: aicwf_usb_exit … usb_deregister / aicwf_usb_disconnect   <- rmmod 不是空操作
+07:57:12  Starting r36-wpa@wlan0…  → 07:57:23 Authentication timed out → 07:57:58 复位没救回来
+```
+
+`rmmod`/`modprobe` 确实跑了（不是"Module is in use"那种假成功），但这个 boot 里
+`new high-speed USB device` **只出现过 1 次，就是开机那次** —— 也就是说驱动重新绑上的还是那颗
+卡在"我正在扫描"里的芯片。**重载模块不等于复位芯片。**
+
+所以 `wifictl` 现在是第四版（`/var/lib/r36-wifictl/audit.log` 会记下每一版的行为）：
+
+* 回滚**先判断链路是不是已经好了**，好了就一个字都不动；没好才按开机前记下的那个
+  `network_id` 定点 `select_network`，不再"全部 enable + reassociate"。
+* `connect` 在动手前写一条审计：`reload=[常驻进程的回话] runtime_id=… was_id=… bss=yes/no
+  scan_rows=… state=…`。上一版这里有个静默失败：`if [ -n "$id" ]` 没有 `else`，网络没被加载时
+  脚本会跳过 `select_network` 然后干等 40 秒——"什么都没尝试"正好是 10-12 早上那个形状。
+  现在这四种原因（reload 被拒 / 块没变成运行时网络 / BSS 不在扫描表里 / 驱动拒扫描）能分开。
+* `driver_reset` 第一步改成**在总线上重插**：`echo 0 > …/authorized` → 2 秒 → `echo 1`，
+  并且记录网口是否真的消失又回来；重载模块退居第二步。这才是"断电重插"在软件侧最近的等价物，
+  而它**仍然没测过**——今晚第一次有代码走到这里，走的是那条被证伪的老路。
+
+审计文件故意不放 `/run`：这套东西的意义就是"卡回到电脑上之后还能读到刚才发生了什么"，
+`/run` 是 tmpfs，一重启就没了。文件里**不写口令**，只写 SSID 和常驻进程的回答。
+
+现场处理仍然是离线做的：原 conf 备份在构建机 `/root/card-conf.before-aqk-removal`，脚本的
+上一版备份在卡上 `/root/wifictl.pre-reset`，再上一版 `/root/wifi-conf.pre-wifictl*`。
+
 
 **还有一件要记住的事：ES 的 ERROR 行会带整条命令，里面是明文口令。** 上面 `executeScript()`
 那句 INFO 不落盘，但失败时的 `LOG(LogError) << "Error executing " << command` 会，实测卡上
