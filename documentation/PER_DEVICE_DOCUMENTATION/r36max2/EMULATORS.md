@@ -28,6 +28,17 @@ RetroArch 本身（resolute 是 `retroarch 1.22.2+dfsg`），但**没有任何 l
 | gba | `gpsp_ezode` | `b4918c36` | `make platform=arm64` | 见下，和 flycast 是同一类坑但更阴：`platform=unix` 用**构建机**的 `uname -a` 决定 JIT |
 | arcade / neogeo / fbneo / cps1 / cps2 | `fbneoplus` | `8ebb4eea` | `cd ${PKG_BUILD} && make -C src/burner/libretro platform=aarch64` | 第一个坑是 `-C` 相对路径：`make_target()` 不在 `${PKG_BUILD}` 里跑，所以少了 `cd` 就 `src/burner/libretro: No such file or directory` |
 
+街机这一层先把期望讲清楚，因为"能不能跑"取决于 ROM 集而不是核：编出来的树里带
+`gamelist.txt`（25,338 个驱动），从游戏包 `fbneo/`、`neogeo/`、`cps1/`、`cps2/` 各抽前 40 个
+文件名去比对，**4 个目录全部 40/40 命中**。这只证明命名对得上，不证明 zip 里的 ROM 哈希
+对得上 —— FBNeo 和 MAME 一样是按驱动定义校验文件的，真正的结论要等上卡才知道。
+`.7z` 也必须进 `<extension>`：`info->valid_extensions = "zip|7z|cue|ccd"`
+（`src/burner/libretro/libretro.cpp:515`），而包里的 `fbneo/` 就是 1812 个 `.7z`。
+BIOS 的查找路径同样是从 `locate_archive`（同文件 :925-1000）读的：
+`<system_directory>/fbneo/<名字>`，而 `retroarch.cfg` 里 `system_directory = "/roms/bios"`，
+所以 `neogeo.zip` 放在 `/roms/bios/fbneo/`（es-launcher 已经建好这个目录，游戏包的 `bios/`
+里本来就有这个文件）。
+
 gpsp 的坑读代码才能看见，编出来的东西不会报错：`platform=unix` 分支（Makefile:23-34）拿
 `$(shell uname -a)` —— **构建机**的 —— 去判断 dynarec，在 x86-64 的 WSL 上它命中
 `CPU_ARCH := x86_32`，于是把 `x86/x86_stub.S` 塞进 SOURCES_ASM 让 aarch64 的 gas 去汇编 x86
