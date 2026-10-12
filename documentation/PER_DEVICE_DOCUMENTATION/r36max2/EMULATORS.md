@@ -188,6 +188,7 @@ systemctl stop r36-es ; fuser /dev/dri/card0   # 必须是空的
 | 游戏长什么样 | `/roms/openbor/*.pak`（游戏包里 30 个） | `/roms/onscripter/<游戏目录>/*.ons` 标记文件 |
 | 为什么必须包一层 | 引擎**没有 rom 参数**：`sdlport.c:30` 把游戏目录硬编码成 CWD 旁的 `Paks`，`menu.c:522` 找不到就打印 `No Mods In Paks Folder!`。所以 wrapper 清空 `Paks/` 里的符号链接、只链本次这一个（连同 `*.pak.0*` 分卷），再 `cd` 过去执行 | 引擎的 root 参数吃的是**目录**不是脚本（`onscripter_main.cpp:370`），而 ES 给的是标记文件，所以 wrapper 取它的 `dirname` |
 | 配置落点 | `/roms/.config/openbor`（在 ROM 分区上，用户能自己找到存档；同时在每个 `<path>` 之外，`Paks/` 的符号链接和引擎自建的 `Logs/` 不会被当成游戏扫进来） | 存档由引擎写进游戏目录本身 |
+| 环境 | 两个 wrapper 都必须 `export SDL_VIDEODRIVER=kmsdrm SDL_AUDIODRIVER=alsa`（本机跑独立 SDL 程序的唯一可行组合，`r36-port` 早就实测过并写在那里）：这台机器没有 X，游戏运行时也没有 compositor，ES 已经把控制台交出来了；不设置就是"打不开显示"，看起来像引擎自己的 bug |
 | 手柄 | 打 0001 号补丁后输入走 `SDL_GameController`（补丁把 `SDL_JoystickOpen` 从 `engine/sdl/control.c` 里**换掉**而不是并存，配方据此断言：两条 API 同时活着会每个键触发两次且没有任何报错）。因此不需要参考发行版那套 `gptokeyb` 假键盘；SDL 初始化会读 CWD 的 `gamecontrollerdb.txt`，wrapper 把 PortMaster 那份 r36max2 映射链过去 | 引擎自己处理 SDL 事件，`-enc:gbk` 是写死的默认值（编码错了照样"跑起来"，只是满屏乱码） |
 
 两个引擎的 `make` 参数也各有一个只能读代码才发现的点，都写进配方的注释里了：
