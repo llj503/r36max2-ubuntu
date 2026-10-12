@@ -235,6 +235,18 @@ current_country() { awk -F= '/^country=/{print $2; exit}' "$CONF" 2>/dev/null; }
 # wpa_supplicant's own escaping inside a quoted string value.
 wpa_quote() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
+# The verb for setting a network variable, kept in exactly one place.
+#
+# It is `set_network <id> <variable> <value>` - this card's wpa_cli says so in its own help
+# text, which carries the example `set_network 1 ssid "network name"`. There is NO `set`
+# command, and `set network …` is worse than a missing verb: wpa_cli matches commands by
+# prefix, so it resolved to set_network with the literal word "network" in the position that
+# must hold the numeric id. The daemon then read that id as atoi("network") = 0 and was
+# handed a nonsense variable name, which is why all six replies on 2026-10-12 09:02:08 were
+# `FAIL` - and why the network it aimed at was id 0, the one the card was actually using.
+# Refusing was the daemon's right answer; my call was the bug.
+set_net() { $CTL set_network "$@" 2>&1; }
+
 # PSK *and* SAE are offered, which is what lets a WPA3-Personal network connect from here.
 # The token list is measured, not guessed: `WPA2-PSK` is a hostapd word and wpa_supplicant
 # rejects it ("Line 8: invalid key_mgmt 'WPA2-PSK'" -> the whole file is refused), while
@@ -369,26 +381,26 @@ cmd_connect() {  # $1 = ssid, $2 = psk, $3 = country
             [ -z "$SNAP" ] || restore_snapshot "$ssid"; return 1 ;;
     esac
 
-    # Every reply is captured and audited.  That is the whole lesson of this bug: the
-    # commands were being issued correctly and discarded, so a daemon answering "Unknown
-    # command" was indistinguishable from one doing exactly as told.
-    ssid_reply=$($CTL set network "$id" ssid "$ssid" 2>&1)
+    # Every reply is captured and audited.  That is the whole lesson of the reload_config
+    # bug: the commands were being issued and discarded, so a daemon answering "Unknown
+    # command" or "FAIL" was indistinguishable from one doing exactly as told.
+    ssid_reply=$(set_net "$id" ssid "\"$(wpa_quote "$ssid")\"")
     if [ -n "$psk" ]; then
         # The plaintext, both AKMs, MFP optional - the same parameters build_block writes,
         # and a hashed psk cannot do SAE, which is why the menu stores plaintext at all.
-        keymgmt_reply=$($CTL set network "$id" key_mgmt 'WPA-PSK SAE' 2>&1)
-        psk_reply=$($CTL set network "$id" psk "\"$psk\"" 2>&1)
-        proto_reply=$($CTL set network "$id" proto 'WPA RSN' 2>&1)
-        mfp_reply=$($CTL set network "$id" ieee80211w 1 2>&1)
+        keymgmt_reply=$(set_net "$id" key_mgmt 'WPA-PSK SAE')
+        psk_reply=$(set_net "$id" psk "\"$(wpa_quote "$psk")\"")
+        proto_reply=$(set_net "$id" proto 'WPA RSN')
+        mfp_reply=$(set_net "$id" ieee80211w 1)
     else
-        keymgmt_reply=$($CTL set network "$id" key_mgmt NONE 2>&1)
+        keymgmt_reply=$(set_net "$id" key_mgmt NONE)
         psk_reply="(open)"
-        proto_reply=$($CTL set network "$id" proto 'WPA RSN' 2>&1)
-        mfp_reply=$($CTL set network "$id" ieee80211w 0 2>&1)
+        proto_reply=$(set_net "$id" proto 'WPA RSN')
+        mfp_reply=$(set_net "$id" ieee80211w 0)
     fi
     # Ask for it by directed probe too, so a hidden or briefly-absent SSID can still be
     # found instead of timing out silently.
-    scanssid_reply=$($CTL set network "$id" scan_ssid 1 2>&1)
+    scanssid_reply=$(set_net "$id" scan_ssid 1)
     audit "connect ssid=\"$ssid\" new_id=$id was_id=${was_id:-none} ssid_reply=[$ssid_reply] keymgmt_reply=[$keymgmt_reply] psk_reply=[$psk_reply] proto_reply=[$proto_reply] mfp_reply=[$mfp_reply] scanssid_reply=[$scanssid_reply] bss=$(bss_seen "$ssid") scan_rows=$(scan_rows | wc -l) state=$(wpa_state) country=$country"
 
     # A rejected parameter is a hard failure, not something to wait 40 seconds for.
