@@ -32,7 +32,10 @@ PKG_LONGDESC="Libretro arcade core, FinalBurn Neo Plus fork."
 PKG_TOOLCHAIN="make"
 
 make_target() {
-  make -C src/burner/libretro platform=aarch64 CC="${CC}" CXX="${CXX}" AR="${AR}"
+  # cd first, like every other core recipe here: make_target does not run inside
+  # ${PKG_BUILD}, which the first attempt proved with "src/burner/libretro: No such file
+  # or directory" while the directory plainly exists in the tarball.
+  cd ${PKG_BUILD} && make -C src/burner/libretro platform=aarch64 CC="${CC}" CXX="${CXX}" AR="${AR}"
 }
 
 makeinstall_target() {
