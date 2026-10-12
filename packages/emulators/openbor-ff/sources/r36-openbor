@@ -37,6 +37,16 @@ fi
 CONFIGDIR=/roms/.config/openbor
 PAKS="${CONFIGDIR}/Paks"
 
+# Both engines here are SDL2 programs, and this board has no X and no running compositor
+# when a game is launched - ES has released the console by then. The value of
+# SDL_VIDEODRIVER=kmsdrm (and SDL_AUDIODRIVER=alsa, because there is no PulseAudio) is not
+# a guess: it is what r36-port already exports for PortMaster's SDL ports, measured on the
+# card. Without them an SDL2 app gets "Cannot connect to display server" style failures
+# that look like an engine bug rather than a missing environment variable.
+export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-kmsdrm}"
+export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
+export HOME="${HOME:-/root}"
+
 mkdir -p "$PAKS" || { echo "r36-openbor: cannot create $PAKS" >&2; exit 3; }
 
 # Only the selected pak may be listed, or the engine shows a game menu of every pak and

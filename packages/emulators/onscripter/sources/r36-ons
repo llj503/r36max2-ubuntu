@@ -26,6 +26,12 @@ if [ ! -d "$game" ]; then
 	exit 3
 fi
 
+# Same two variables r36-port exports, for the same measured reason: this is an SDL2 program
+# on a board with no X and no compositor running while a game holds the console.
+export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-kmsdrm}"
+export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
+export HOME="${HOME:-/root}"
+
 # -enc:gbk is a default, not a guess about the user's library: the VN releases in this
 # region ship GBK-encoded scripts, and with the wrong encoding every line of dialogue is
 # mojibake while the engine still "runs". Shift-JIS games need -enc:sjis instead
