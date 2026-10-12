@@ -297,11 +297,45 @@ strings /usr/sbin/wpa_supplicant: wpa_supplicant v2.11
 `network_id=0` → `0`，`id=0` → `0`，`DISCONNECTED` → 空，只有 `id_str=`/`prev_id=` 的行 → 空。
 **这两次失败都在我的测试脚本里，如果我不看它们报了什么的就照抄结论，"解析有 bug"这条假新闻就写进仓库了。**
 
-至于"为什么 select_network 之后连 aqk 都没尝试"，我目前的怀疑是 **BSS 不在扫描表里**：wpa 关联的是
-BSS 而不是一个 ssid 字符串，`select_network` 找不到对应 BSS 时就是等，而我上面那句 `reload_config`
-恰好可能把菜单刚扫出来的结果丢掉。这仍然是**怀疑**，不是结论——所以它被写成一条会打印
-`bss=yes/no`、`scan_rows=` 的审计，下次上机那一条日志要么证实它要么排除它。我不想第三次把一个
-顺理成章的故事写成原因。
+至于"为什么 select_network 之后连 aqk 都没尝试"，审计行加上之后的**第一次上机就回答了，而且答案是
+我自己的 bug**：
+
+```
+2026-10-12T00:38:42Z connect ssid="aqk" reload=[Unknown command 'reload_config']
+                     runtime_id=none was_id=0 bss=yes scan_rows=4 state=COMPLETED country=CN
+```
+
+**`wpa_cli` 里没有 `reload_config` 这个命令。** 对着卡上的二进制问得清清楚楚：
+`/usr/sbin/wpa_cli` 里有 `reconfigure`、`add_network`、`select_network`、`remove_network`、
+`enable_network`、`save_config`，**没有** `reload` 也没有 `reload_config`；daemon 侧
+`wpa_supplicant` 里有 `RECONFIGURE`、`reload_config` 出现 0 次。也就是说这个脚本从写出来那天起，
+每一次"让常驻进程重读文件"都在回 `Unknown command`——而我把回话丢进了 `/dev/null`，所以在日志里
+"命令不认识"和"命令照办了"长得一模一样。
+
+于是整条因果闭上了，而且和芯片、和口令、和 aqk 那个路由器都没有关系：
+
+* conf 文件写对了（`put_network` + `validate_conf` 那一路是好的）；
+* 那个 AP 在扫描表里看得见（`bss=yes`、`scan_rows=4`）；
+* 但常驻进程**从来没被告知有新网络**，所以 `network_id_for "aqk"` 是空的；
+* 上一版这里正好是 `if [ -n "$id" ]` 没有 `else`——静默跳过 `select_network`，然后干等 40 秒；
+* 屏上就是"连接失败"，口令一次都没被检验过。
+
+现在连接**根本不动文件**：`add_network` → `set network <id> ssid/key_mgmt/psk/proto/ieee80211w/
+scan_ssid` → `enable_network` → `select_network`，每条命令的回话都进审计；参数被拒就是立刻失败，
+不再等 40 秒。文件只在**已经连上之后**写，用来活过重启；那一步要是被 `validate_conf` 挡了，审计会
+写"连上了但没能存盘，重启后不会自动连"——因为"连接成功"以前会被读成"已保存"。
+
+同一类问题在 `connect_saved` 里也有一份：那里也写着 `reload_config`（同样是假命令），现在换成
+`reconfigure` 并且记回话。它后面那句无条件的 `reassociate` 也删了——`select_network` 本身就是断开再
+重连，在这块芯片上多做一次断开就是"重新连上"和"卡住"的区别，这条今天刚在回滚路径上量过。
+
+**口令泄露那条不变量也顺手做严了。** 原来的检查是 grep 关键字 `psk`，于是 `psk_r`（回话变量）也会被
+`$psk` 匹配上——它同时造成了一个假报警和一个歧义的审计字段名。现在回话一律叫 `*_reply`，检查改成
+词边界：`audit`/`err` 里不许展开 `$psk`；文件里仍然有 3 行引用 `$psk`，全是必须引用它的那三条
+（判空、`set psk` 本身、成功后 `build_block` 存盘）。
+
+还**没测**的一件事：`add_network` + `select_network` 这条路能不能真的连上 aqk。差一次上机，而审计行
+会说明剩下哪种可能。
 
 现场处理仍然是离线做的：原 conf 备份在构建机 `/root/card-conf.before-aqk-removal`，脚本的
 上一版备份在卡上 `/root/wifictl.pre-reset`，再上一版 `/root/wifi-conf.pre-wifictl*`。
