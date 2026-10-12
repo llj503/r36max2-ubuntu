@@ -1,0 +1,34 @@
+#!/bin/sh
+# r36-ons - start one visual-novel game from the .ons marker inside its folder.
+#
+# The engine has no "load this script file" argument: -r/--root (onscripter_main.cpp:370)
+# takes the DIRECTORY, and ONScripter then looks for nscript.dat / script Lusfas / .arc /
+# .nsa inside it. ES gives us the marker file, so the launch is "the folder containing it".
+set -u
+
+rom=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-emulator|-core) shift 2 ;;   # ES appends these; the engine would treat them as options
+		-*) shift ;;
+		*)   rom="$1"; shift ;;
+	esac
+done
+
+if [ -z "$rom" ] || [ ! -e "$rom" ]; then
+	echo "r36-ons: no .ons marker given (usage: r36-ons <path/to/game>/<name>.ons)" >&2
+	exit 2
+fi
+
+game="$(dirname "$rom")"
+if [ ! -d "$game" ]; then
+	echo "r36-ons: $game is not a directory" >&2
+	exit 3
+fi
+
+# -enc:gbk is a default, not a guess about the user's library: the VN releases in this
+# region ship GBK-encoded scripts, and with the wrong encoding every line of dialogue is
+# mojibake while the engine still "runs". Shift-JIS games need -enc:sjis instead
+# (onscripter_main.cpp:383-390 accepts sjis, gbk, utf8); there is no per-game override
+# because there is no game on the card yet to define what it should look like.
+exec /usr/bin/onsyuri -r "$game" -fullscreen -enc:gbk

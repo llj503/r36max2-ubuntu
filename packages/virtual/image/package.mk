@@ -19,6 +19,6 @@ PKG_DEPENDS_TARGET="toolchain rootfs-base rootfs-apt \
   libretro-fceumm libretro-gambatte libretro-mgba libretro-snes9x2010 libretro-vba-next \
   libretro-pcsx-rearmed libretro-flycast libretro-mednafen-saturn libretro-parallel-n64 \
   libretro-fbneoplus libretro-gpsp-ezode \
-  openbor-ff"
+  openbor-ff onscripter"
 PKG_SECTION="virtual"
 PKG_LONGDESC="Root package: everything that goes into the r36max2 image."

@@ -49,6 +49,13 @@ PKG_TOOLCHAIN="manual"
 # exactly what this rootfs ships; rootfs-apt re-mirrors usr/include and
 # usr/lib/aarch64-linux-gnu into the per-package sysroot, which is how they reach the
 # cross build.
+#
+# The five after those are the ONScripter (OnscripterYuri) standalone's, read off its own
+# CMakeLists.txt:46-70 rather than guessed: find_package(SDL2 CONFIG) plus
+# pkg_check_modules(SDL2_ttf), (SDL2_image), (libjpeg), find_package(Lua), and a direct
+# link of bz2. libsdl2-mixer-dev was already in the list for PortMaster. lua5.4-dev because
+# the engine's LUAHandler.cpp guards its API with #if LUA_VERSION_NUM >= 502, so it is not
+# tied to the 5.1 that other ONScripter ports vendor.
 R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   iputils-ping curl wget vim git htop tmux less procps kmod usbutils tzdata net-tools \
   udev systemd-timesyncd python3 alsa-utils evtest input-utils rfkill libnss-mdns fdisk \
@@ -60,6 +67,7 @@ R36_PKGS="ca-certificates openssh-server sudo wpasupplicant iw iproute2 \
   libsdl2-dev libsdl2-mixer-dev libfreeimage-dev \
   libsdl2-ttf-2.0-0 libsdl2-image-2.0-0 libsdl2-gfx-1.0-0 \
   libsdl2-gfx-dev libvpx-dev \
+  libsdl2-ttf-dev libsdl2-image-dev libjpeg-turbo8-dev libbz2-dev lua5.4-dev \
   libavcodec-dev libavformat-dev libswscale-dev \
   libcurl4-openssl-dev libasound2-dev libudev-dev libfreetype-dev libfmt-dev \
   rapidjson-dev libvlc-dev gettext \
