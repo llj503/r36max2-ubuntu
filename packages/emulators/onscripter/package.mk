@@ -49,9 +49,17 @@ PKG_DEPENDS_TARGET="toolchain rootfs-apt"
 PKG_LONGDESC="ONScripter visual novel engine (OnscripterYuri), built for aarch64."
 PKG_TOOLCHAIN="cmake-make"
 
-# MinSizeRel is the upstream's own size path: CMakeLists.txt:16-19 turns on -flto and
-# -s under it. Release would ship a bigger binary for no benefit on a handheld.
-PKG_CMAKE_OPTS_TARGET="-DCMAKE_BUILD_TYPE=MinSizeRel"
+# NOT MinSizeRel, even though that is the upstream's own size path (CMakeLists.txt:16-19
+# turns on -flto and -s under it): this cross gcc was not built with LTO support, so the
+# flag is a hard compiler error, not a slower build. Measured on the first run of this
+# recipe - eight .cpp in, then
+#   cc1plus: error: LTO support has not been enabled in this configuration
+# repeated per translation unit. This is the fourth package here to hit the same wall
+# (libretro-mgba's -DBUILD_LTO=OFF, libretro-mednafen-saturn's LTO=0, and the -flto=auto
+# that satune's Makefile defaults to) and I still reached for the upstream's recommendation
+# first. Release keeps -O3 -DNDEBUG and drops -flto; the -s it also drops is done
+# explicitly below with ${STRIP}.
+PKG_CMAKE_OPTS_TARGET="-DCMAKE_BUILD_TYPE=Release"
 
 makeinstall_target() {
   local BIN
