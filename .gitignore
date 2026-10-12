@@ -68,7 +68,11 @@ __pycache__/
 *.AppImage
 
 # v21 build framework: download cache, build tree, image output
-sources/
+# Anchored on purpose. Unanchored, this rule also swallowed packages/*/sources/, which is
+# where a package's own launcher scripts live (openbor-ff ships r36-openbor there) - the
+# file sat on disk, git never saw it, and the recipe's install line would fail only on the
+# build box after a push, where the file does not exist.
+/sources/
 build.*
 target/
 

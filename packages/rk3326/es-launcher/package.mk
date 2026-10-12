@@ -39,7 +39,7 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/roms
   for s in nes snes gb gbc gba fds megadrive mastersystem gamegear pcengine pcfx \
            atari2600 atari7800 atarilynx coleco vectrex neogeo cps1 cps2 arcade \
-           fbneo psx n64 saturn dreamcast psp nds gw chaiplus; do
+           fbneo psx n64 saturn dreamcast psp nds gw chaiplus openbor; do
     mkdir -p ${INSTALL}/roms/${s}
     printf '%s\n' "Drop games for this system here. ES only lists a system once it holds at least one file with an extension its es_systems.cfg entry declares." \
       > ${INSTALL}/roms/${s}/.keep

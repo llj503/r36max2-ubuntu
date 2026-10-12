@@ -1,0 +1,63 @@
+#!/bin/sh
+# r36-openbor - launch one OpenBOR .pak on the r36max2.
+#
+# Why a wrapper and not "<binary> %ROM%": the engine has no rom argument at all. It reads
+# its game list from a directory literally named "Paks" next to its CWD (sdlport.c:30
+# paksDir = "Paks"; menu.c:522 prints "No Mods In Paks Folder!" when the scan comes back
+# empty), so a launch means putting exactly one pak where it will be found and running the
+# engine from that directory. This is the same shape every OpenBOR port uses.
+#
+# The config lives on the ROM partition rather than in /root because that is where a user
+# looks for their game state, and it is outside every es_systems.cfg <path>, so the Paks/
+# symlinks and the engine's own Logs/ can never be picked up as games.
+#
+# No keyboard emulation: the engine is the fflns fork with the SDL_GameController patch
+# applied (packages/emulators/openbor-ff/patches/0001), which is the whole reason it is the
+# fork we build. Other OpenBOR builds need a fake keyboard around them because they only
+# read the keyboard device.
+set -u
+
+emu=""
+core=""
+rom=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-emulator) emu="${2:-}"; shift 2 ;;
+		-core)     core="${2:-}"; shift 2 ;;
+		-*)        shift ;;
+		*)         rom="$1"; shift ;;
+	esac
+done
+
+if [ -z "$rom" ] || [ ! -f "$rom" ]; then
+	echo "r36-openbor: no .pak given (usage: r36-openbor <pak>)" >&2
+	exit 2
+fi
+
+CONFIGDIR=/roms/.config/openbor
+PAKS="${CONFIGDIR}/Paks"
+
+mkdir -p "$PAKS" || { echo "r36-openbor: cannot create $PAKS" >&2; exit 3; }
+
+# Only the selected pak may be listed, or the engine shows a game menu of every pak and
+# the user's pick is meaningless. Remove symlinks, not trees: this directory only ever
+# holds links into /roms/openbor, and a rm -rf of it would follow a mis-made link.
+find "$PAKS" -mindepth 1 -maxdepth 1 -type l -delete
+
+ln -sf "$rom" "$PAKS/"
+# Split paks (name.pak + name.pak.01 ...) are a real distribution format for big OpenBOR
+# games; without the parts the engine loads a pak that is missing its data.
+for f in "$rom".0*; do
+	[ -f "$f" ] && ln -sf "$f" "$PAKS/"
+done
+
+# SDL looks for gamecontrollerdb.txt in the CWD at init, and the engine's controller code
+# is SDL_GameController-based, so an unmapped device means "no controller" with no error.
+# The r36max2 line is the one PortMaster uses, and it is hardware-verified for ES.
+if [ ! -e "${CONFIGDIR}/gamecontrollerdb.txt" ] &&
+   [ -f /usr/config/PortMaster/gamecontrollerdb-r36max2.txt ]; then
+	ln -sf /usr/config/PortMaster/gamecontrollerdb-r36max2.txt "${CONFIGDIR}/gamecontrollerdb.txt"
+fi
+
+cd "$CONFIGDIR" || exit 3
+exec /usr/bin/OpenBOR-ff
