@@ -277,6 +277,32 @@ boot 0 全程一次都没重启过服务，wedge 反而翻倍，而且**再也�
 审计文件故意不放 `/run`：这套东西的意义就是"卡回到电脑上之后还能读到刚才发生了什么"，
 `/run` 是 tmpfs，一重启就没了。文件里**不写口令**，只写 SSID 和常驻进程的回答。
 
+### 顺着这条线又抓到一条：这张卡的 `wpa_cli status` 打的是 `id=`，不是 `network_id=`
+
+`restore_snapshot` 需要"刚才连的是哪个网络"的运行时 id，我先写了 `/^network_id=/`（新版本
+wpa_supplicant 的写法）就提交了 —— 这是个**没测过的假设**，而它的失败方式恰好是我这次要消灭的那种：
+解析永远返回空，回滚每次都悄悄走 fallback，屏上什么都看不出来。
+
+对着卡上的二进制验，两个独立来源同意：
+
+```
+dpkg status                     : wpasupplicant 2:2.11-0ubuntu5
+strings /usr/sbin/wpa_supplicant: wpa_supplicant v2.11
+格式串 `network_id=%` 出现次数   : 0
+                                 : 却有 id=%d / id=%u
+```
+
+所以这台机器印的是 `id=`。现在两种写法都吃，并且拿**文件里那行字面 awk**（不是塞进变量的正则——
+那样 awk 会当成表达式报语法错；也不是 `${!var}`——那是 bash 的间接展开，用 `sh` 跑直接死）过了四种输入：
+`network_id=0` → `0`，`id=0` → `0`，`DISCONNECTED` → 空，只有 `id_str=`/`prev_id=` 的行 → 空。
+**这两次失败都在我的测试脚本里，如果我不看它们报了什么的就照抄结论，"解析有 bug"这条假新闻就写进仓库了。**
+
+至于"为什么 select_network 之后连 aqk 都没尝试"，我目前的怀疑是 **BSS 不在扫描表里**：wpa 关联的是
+BSS 而不是一个 ssid 字符串，`select_network` 找不到对应 BSS 时就是等，而我上面那句 `reload_config`
+恰好可能把菜单刚扫出来的结果丢掉。这仍然是**怀疑**，不是结论——所以它被写成一条会打印
+`bss=yes/no`、`scan_rows=` 的审计，下次上机那一条日志要么证实它要么排除它。我不想第三次把一个
+顺理成章的故事写成原因。
+
 现场处理仍然是离线做的：原 conf 备份在构建机 `/root/card-conf.before-aqk-removal`，脚本的
 上一版备份在卡上 `/root/wifictl.pre-reset`，再上一版 `/root/wifi-conf.pre-wifictl*`。
 
