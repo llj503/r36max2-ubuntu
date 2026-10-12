@@ -49,6 +49,15 @@ PKG_DEPENDS_TARGET="toolchain rootfs-apt"
 PKG_LONGDESC="ONScripter visual novel engine (OnscripterYuri), built for aarch64."
 PKG_TOOLCHAIN="cmake-make"
 
+post_patch() {
+  # Same reason openbor-ff asserts: scripts/unpack never checks patch's exit status and the
+  # cleanup deletes every .rej, so a patch that did not apply is indistinguishable from one
+  # that did by looking at the log.
+  if ! grep -q '\${LUA_LIBRARIES}' ${PKG_BUILD}/CMakeLists.txt; then
+    die "onscripter: patch 0001 did not apply - CMakeLists.txt still links the bare name lua, which Ubuntu does not ship a liblua.so for (ld.bfd: cannot find -llua)"
+  fi
+}
+
 # NOT MinSizeRel, even though that is the upstream's own size path (CMakeLists.txt:16-19
 # turns on -flto and -s under it): this cross gcc was not built with LTO support, so the
 # flag is a hard compiler error, not a slower build. Measured on the first run of this

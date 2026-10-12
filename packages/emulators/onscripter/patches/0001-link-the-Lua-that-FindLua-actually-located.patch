@@ -1,0 +1,21 @@
+From: r36max2 <build@localhost>
+Subject: [PATCH] onscripter: link the Lua that FindLua actually located
+
+CMakeLists.txt:57 names the library `lua`, which is the Arch-style soname. On
+Ubuntu the lua5.4-dev package installs liblua5.4.so and no liblua.so, so cmake
+reports "Found Lua: .../liblua5.4.so (5.4.8)", the compile succeeds, and the link
+dies on ld.bfd: cannot find -llua. The variable two lines above already holds the
+absolute path FindLua resolved, so link that instead of a name the distro does not
+ship.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -57,7 +57,7 @@
+             SDL2::SDL2
+             jpeg
+             bz2
+-            lua
++            ${LUA_LIBRARIES}
+             dl
+             SDL2_ttf
+             SDL2_image
