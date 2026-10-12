@@ -165,6 +165,22 @@ libc.so.6`）在卡的 `/usr/lib/aarch64-linux-gnu` 全部能找到，5 个必�
 以及 `/roms/{openbor,onscripter}`、`/roms/.config/openbor`。旧 cfg 备份在
 `/root/es_systems.cfg.pre-engines`。
 
+**这次部署自己踩到一个更阴的坑**：`deploy-engines.sh` 的 payload 是从**工作树**里读的
+（`${R}/packages/.../es_systems.cfg`），而它没有 `git pull`。第一次跑的时候构建机的树还停在
+`904e1ce`，于是我"验证成功"地写进卡一份**上一个提交**的 cfg——本地算出 `c59ddb81`、构建机
+`9eb8a33c`，日志里 `es_systems = 9eb8a33c (= 9eb8a33c)` 两边相等，看着完全健康。相等不是
+正确，是与同一个陈旧副本相等。现在脚本开头加了 `git pull --ff-only`（分叉就停手，不在写卡的
+路上顺手 merge），第二次跑写出的是 `c59ddb81`，与仓库一致。凡是"从树里取文件写卡"的脚本都
+得先同步，这条对 `deploy-cores-only.sh` 同样成立。
+
+ONS 内容在**另一个卷**上（`I:\ONS游戏资源\迷你龙ONS包\ONS`，37 个游戏 33 GB），不在游戏包里；
+卡上现有两个可测的：`天使的工作`（74 MB，`nscript.dat`）与 `拂过小镇的旋律之风`（38 MB，
+`0.txt`），每个文件都读回 sha 比对过，标记 `<目录名>.ons` 由 `copy-ons-game.sh` 建。
+判"能不能吃"的依据是 `ScriptHandler.cpp:1000-1017`：`0.txt/00.txt` 走明文
+（`encrypt_mode=0`），`nscript.dat` 走引擎自带解码（`encrypt_mode=1`）——那 26 个
+`nscript.dat` 全都不是 gzip，这是格式本来就这样，不是包坏了。
+
+
 部署日志那行 `systems: 17` 是 grep 计数，不是系统数：`grep -c '<system>'` 把第 23 行注释里的
 `/roms/<system>` 也算进去了，真实元素是 **16** 个。`scripts/image` 的自检是解析 XML 的，它报的
 `cfg systems cross-checked: 16` 才是准的——两个数不一致时以解析那个为准。

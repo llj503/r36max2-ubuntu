@@ -186,6 +186,7 @@ systemctl stop r36-es ; fuser /dev/dri/card0   # 必须是空的
 | 配方 | `packages/emulators/openbor-ff` | `packages/emulators/onscripter` |
 | 上游 pin | `AveyondFly/openbor-fflns` `5cac6523`，tarball 189 MB，sha256 `2e2ff887` | `YuriSizuku/OnscripterYuri` `08f744b3`，sha256 `7d0b640b` |
 | 游戏长什么样 | `/roms/openbor/*.pak`（游戏包里 30 个） | `/roms/onscripter/<游戏目录>/*.ons` 标记文件 |
+| 游戏从哪来 | 就是游戏包里的 `openbor/`，27 个 `.pak`（头四字节 `PACK` 魔数，无分卷，最大 401 MB），已拷进卡 | **不在 ROM 那个包里，在另一个卷**：`I:\ONS游戏资源\迷你龙ONS包\ONS`，实测 37 个游戏 33 GB，其中 26 个用 `nscript.dat`、11 个用 `0.txt/00.txt`；包里**没有任何 `.ons`**，标记是这边自己建的。卡上现有两个，正好覆盖引擎的两条分支：`天使的工作`（`nscript.dat`）与 `拂过小镇的旋律之风`（`0.txt`） |
 | 为什么必须包一层 | 引擎**没有 rom 参数**：`sdlport.c:30` 把游戏目录硬编码成 CWD 旁的 `Paks`，`menu.c:522` 找不到就打印 `No Mods In Paks Folder!`。所以 wrapper 清空 `Paks/` 里的符号链接、只链本次这一个（连同 `*.pak.0*` 分卷），再 `cd` 过去执行 | 引擎的 root 参数吃的是**目录**不是脚本（`onscripter_main.cpp:370`），而 ES 给的是标记文件，所以 wrapper 取它的 `dirname` |
 | 配置落点 | `/roms/.config/openbor`（在 ROM 分区上，用户能自己找到存档；同时在每个 `<path>` 之外，`Paks/` 的符号链接和引擎自建的 `Logs/` 不会被当成游戏扫进来） | 存档由引擎写进游戏目录本身 |
 | 环境 | 两个 wrapper 都必须 `export SDL_VIDEODRIVER=kmsdrm SDL_AUDIODRIVER=alsa`（本机跑独立 SDL 程序的唯一可行组合，`r36-port` 早就实测过并写在那里）：这台机器没有 X，游戏运行时也没有 compositor，ES 已经把控制台交出来了；不设置就是"打不开显示"，看起来像引擎自己的 bug |
